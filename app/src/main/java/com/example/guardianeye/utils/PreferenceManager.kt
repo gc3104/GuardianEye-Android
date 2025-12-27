@@ -18,6 +18,8 @@ class PreferenceManager(private val context: Context) {
         val EMERGENCY_CONTACT = stringPreferencesKey("emergency_contact")
         val STREAM_URL = stringPreferencesKey("stream_url")
         val FOOTAGE_DIRECTORY_URI = stringPreferencesKey("footage_directory_uri")
+        val AI_MODEL_URL = stringPreferencesKey("ai_model_url")
+        val AI_MODEL_FILENAME = stringPreferencesKey("ai_model_filename")
         
         // Alert Preferences
         val ALERT_INTRUDER = booleanPreferencesKey("alert_intruder")
@@ -100,6 +102,30 @@ class PreferenceManager(private val context: Context) {
     suspend fun getStreamUrl(): String? {
         return context.dataStore.data.map { preferences ->
             preferences[STREAM_URL]
+        }.first()
+    }
+
+    suspend fun saveAiModelUrl(url: String) {
+        context.dataStore.edit { preferences ->
+            preferences[AI_MODEL_URL] = url
+        }
+    }
+
+    suspend fun getAiModelUrl(): String? {
+        return context.dataStore.data.map { preferences ->
+            preferences[AI_MODEL_URL]
+        }.first()
+    }
+
+    suspend fun saveAiModelFilename(filename: String) {
+        context.dataStore.edit { preferences ->
+            preferences[AI_MODEL_FILENAME] = filename
+        }
+    }
+
+    suspend fun getAiModelFilename(): String {
+        return context.dataStore.data.map { preferences ->
+            preferences[AI_MODEL_FILENAME] ?: "gemma-3n-E4B-it-int4.task"
         }.first()
     }
 

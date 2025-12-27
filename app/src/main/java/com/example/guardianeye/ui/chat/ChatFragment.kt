@@ -30,7 +30,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -64,28 +63,25 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.rememberAsyncImagePainter
 import com.example.guardianeye.R
+import com.example.guardianeye.ai.AiActionManager
+import com.example.guardianeye.ai.AiModelManager
 import com.example.guardianeye.model.AlertType
 import com.example.guardianeye.model.ChatMessage
 import com.example.guardianeye.ui.theme.GuardianEyeTheme
 import com.example.guardianeye.utils.PreferenceManager
 import com.example.guardianeye.utils.makeCall
-import com.example.guardianeye.utils.sendSms
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
+import org.json.JSONObject
 import java.util.Locale
 
 class ChatFragment : Fragment() {
 
     private lateinit var preferenceManager: PreferenceManager
+    private lateinit var aiActionManager: AiActionManager
+    private lateinit var aiModelManager: AiModelManager
 
     private var alertId: String? = null
     private var alertType: String? = null
@@ -109,8 +105,12 @@ class ChatFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        preferenceManager = PreferenceManager(requireContext())
-        return ComposeView(requireContext()).apply {
+        val context = requireContext()
+        preferenceManager = PreferenceManager(context)
+        aiActionManager = AiActionManager(context)
+        aiModelManager = AiModelManager(context)
+        
+        return ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -128,7 +128,9 @@ class ChatFragment : Fragment() {
                             alertDesc = alertDesc,
                             mediaUrl = mediaUrl,
                             mediaType = mediaType,
-                            preferenceManager = preferenceManager
+                            preferenceManager = preferenceManager,
+                            aiModelManager = aiModelManager,
+                            aiActionManager = aiActionManager
                         )
                     }
                 }
@@ -145,7 +147,9 @@ fun ChatScreen(
     alertDesc: String? = null,
     mediaUrl: String? = null,
     mediaType: String? = null,
-    preferenceManager: PreferenceManager
+    preferenceManager: PreferenceManager,
+    aiModelManager: AiModelManager,
+    aiActionManager: AiActionManager
 ) {
     val context = LocalContext.current
     var chatMessages by remember { mutableStateOf(listOf<ChatMessage>()) }
@@ -153,133 +157,62 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     
-    // LLM State
-    var llmInference: LlmInference? by remember { mutableStateOf(null) }
-    var isModelDownloading by remember { mutableStateOf(false) }
-    var downloadProgress by remember { mutableStateOf(0f) }
     var modelReady by remember { mutableStateOf(false) }
-    
-    val modelName = "gemma-3n-E4B-it-int4.task"
-    // TODO: Replace with the actual URL where the model is hosted
-    val modelUrl = "https://example.com/path/to/$modelName" 
 
     val genericHello = stringResource(R.string.generic_hello_message)
     val panicButtonText = stringResource(R.string.panic_button_text)
-    val titleChat = stringResource(R.string.title_chat)
-
+    
     // Check and Initialize LLM
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            val modelFile = File(context.filesDir, modelName)
-            if (modelFile.exists()) {
-                try {
-                    val options = LlmInference.LlmInferenceOptions.builder()
-                        .setModelPath(modelFile.absolutePath)
-                        .setMaxTokens(512)
-                        .build()
-                    llmInference = LlmInference.createFromOptions(context, options)
-                    modelReady = true
-                } catch (e: Exception) {
-                    Log.e("ChatScreen", "Error initializing LLM", e)
-                }
-            }
-        }
-    }
-
-    fun downloadModel() {
-        scope.launch(Dispatchers.IO) {
-            isModelDownloading = true
-            downloadProgress = 0f
-            val modelFile = File(context.filesDir, modelName)
-            val client = OkHttpClient()
-            val request = Request.Builder().url(modelUrl).build()
-
-            try {
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) throw IOException("Unexpected code $response")
-                    
-                    val body = response.body ?: throw IOException("Empty body")
-                    val contentLength = body.contentLength()
-                    val inputStream = body.byteStream()
-                    val outputStream = FileOutputStream(modelFile)
-                    
-                    val buffer = ByteArray(8 * 1024)
-                    var bytesRead: Int
-                    var totalBytesRead = 0L
-                    
-                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                        outputStream.write(buffer, 0, bytesRead)
-                        totalBytesRead += bytesRead
-                        if (contentLength > 0) {
-                            withContext(Dispatchers.Main) {
-                                downloadProgress = totalBytesRead.toFloat() / contentLength.toFloat()
-                            }
-                        }
-                    }
-                    outputStream.flush()
-                    outputStream.close()
-                    inputStream.close()
-                }
-
-                // Initialize after download
-                val options = LlmInference.LlmInferenceOptions.builder()
-                    .setModelPath(modelFile.absolutePath)
-                    .setMaxTokens(512)
-                    .build()
-                llmInference = LlmInference.createFromOptions(context, options)
-                modelReady = true
-                withContext(Dispatchers.Main) {
-                    chatMessages = chatMessages + ChatMessage(message = "Model downloaded and ready!", isUser = false)
-                }
-
-            } catch (e: Exception) {
-                Log.e("ChatScreen", "Download failed", e)
-                withContext(Dispatchers.Main) {
-                    chatMessages = chatMessages + ChatMessage(message = "Failed to download model: ${e.message}", isUser = false)
-                    // Clean up partial file
-                    if (modelFile.exists()) modelFile.delete()
-                }
-            } finally {
-                isModelDownloading = false
-            }
-        }
-    }
-
-    fun markResolved() {
-        alertId?.let {
-            FirebaseFirestore.getInstance().collection("alerts").document(it)
-                .update("isActionTaken", true)
+        if (aiModelManager.isModelDownloaded()) {
+            modelReady = aiModelManager.initializeModel()
         }
     }
 
     fun handleAction(action: String) {
         scope.launch {
-            when (action) {
-                "Call" -> {
-                    val contact = preferenceManager.getEmergencyContact()
-                    if (!contact.isNullOrEmpty()) makeCall(context, contact) else Toast.makeText(context, "No emergency contact set!", Toast.LENGTH_SHORT).show()
-                }
-                "SMS" -> {
-                    val contact = preferenceManager.getEmergencyContact()
-                    if (!contact.isNullOrEmpty()) sendSms(context, contact, "Alert: ${alertType ?: "Security Event"} detected via GuardianEye.") else Toast.makeText(context, "No emergency contact set!", Toast.LENGTH_SHORT).show()
-                }
-                "Ignore" -> {
-                    markResolved()
-                }
-                else -> {
-                }
-            }
+             val resultMessage = aiActionManager.executeAction(action, alertType, alertId)
+             chatMessages = chatMessages + ChatMessage(message = resultMessage, isUser = false)
         }
     }
 
     fun generateLlmResponse(prompt: String) {
-        val inference = llmInference
+        val inference = aiModelManager.getInferenceEngine()
         if (inference != null) {
             scope.launch(Dispatchers.IO) {
                 try {
-                    val response = inference.generateResponse(prompt)
+                    // Combine system instructions with user prompt
+                    val fullPrompt = "${aiModelManager.generateSystemInstructions()}\n\nUser: $prompt\nAI:"
+                    val response = inference.generateResponse(fullPrompt)
+                    
+                    // Parse response for JSON intent
+                    var displayMessage = response
+                    var actionToExecute: String? = null
+                    
+                    val jsonStart = response.lastIndexOf("```json")
+                    if (jsonStart != -1) {
+                         val jsonEnd = response.lastIndexOf("```")
+                         if (jsonEnd > jsonStart) {
+                             val jsonString = response.substring(jsonStart + 7, jsonEnd).trim()
+                             try {
+                                 val jsonObject = JSONObject(jsonString)
+                                 actionToExecute = jsonObject.optString("intent")
+                                 // Remove the JSON block from the display message
+                                 displayMessage = response.take(jsonStart).trim()
+                             } catch (e: Exception) {
+                                 Log.e("ChatScreen", "Failed to parse JSON intent", e)
+                             }
+                         }
+                    }
+
                     withContext(Dispatchers.Main) {
-                        chatMessages = chatMessages + ChatMessage(message = response, isUser = false)
+                        if (displayMessage.isNotBlank()) {
+                            chatMessages = chatMessages + ChatMessage(message = displayMessage, isUser = false)
+                        }
+                        
+                        if (actionToExecute != null) {
+                            handleAction(actionToExecute)
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e("ChatScreen", "LLM Inference Error", e)
@@ -290,21 +223,17 @@ fun ChatScreen(
             }
         } else {
              // Fallback if LLM not loaded
-             val action = when {
-                prompt.contains("call", ignoreCase = true) -> "Call"
-                prompt.contains("sms", ignoreCase = true) || prompt.contains("text", ignoreCase = true) -> "SMS"
-                prompt.contains("ignore", ignoreCase = true) || prompt.contains("dismiss", ignoreCase = true) -> "Ignore"
-                else -> "UNKNOWN"
-            }
+             val action = aiActionManager.parseActionFromText(prompt)
+             
             if (action != "UNKNOWN") {
                 handleAction(action)
-                chatMessages = chatMessages + ChatMessage(message = "Action $action taken.", isUser = false)
             } else {
-                 if (!isModelDownloading && !modelReady) {
-                     chatMessages = chatMessages + ChatMessage(message = "I need to download my brain first.", isUser = false)
-                 } else {
-                     chatMessages = chatMessages + ChatMessage(message = "I'm not connected to my brain (LLM) right now.", isUser = false)
-                 }
+                val fallbackMsg = if (!modelReady) {
+                    "I'm running in basic mode. You can enable advanced AI in Settings."
+                } else {
+                    "I'm not connected to my brain (LLM) right now."
+                }
+                chatMessages = chatMessages + ChatMessage(message = fallbackMsg, isUser = false)
             }
         }
     }
@@ -312,20 +241,15 @@ fun ChatScreen(
     fun handleUserMessage(text: String) {
         chatMessages = chatMessages + ChatMessage(message = text, isUser = true)
         
-        // Use LLM if available, otherwise fallback
-        if (llmInference != null) {
+        if (modelReady) {
              generateLlmResponse(text)
         } else {
-            val action = when {
-                text.contains("call", ignoreCase = true) -> "Call"
-                text.contains("sms", ignoreCase = true) || text.contains("text", ignoreCase = true) -> "SMS"
-                text.contains("ignore", ignoreCase = true) || text.contains("dismiss", ignoreCase = true) -> "Ignore"
-                else -> "UNKNOWN"
-            }
+            // Fallback parsing
+            val action = aiActionManager.parseActionFromText(text)
             if (action != "UNKNOWN") {
                 handleAction(action)
-            } else if (!isModelDownloading && !modelReady) {
-                // If model is missing, maybe prompt to download?
+            } else {
+                 // No action found and no model
             }
         }
     }
@@ -355,7 +279,7 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(titleChat) },
+                title = { }, // Empty title
                 actions = {
                     Button(
                         onClick = {
@@ -404,25 +328,6 @@ fun ChatScreen(
                             VideoPlayer(url = mediaUrl)
                         }
                     }
-                }
-            }
-            
-            // Download Progress / Button
-            if (!modelReady && !isModelDownloading) {
-                 Button(
-                     onClick = { downloadModel() },
-                     modifier = Modifier.padding(16.dp).fillMaxWidth()
-                 ) {
-                     Text("Download AI Model")
-                 }
-            } else if (isModelDownloading) {
-                Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
-                    Text("Downloading AI Model...", style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(4.dp))
-                    LinearProgressIndicator(
-                        progress = { downloadProgress },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
                 }
             }
 
@@ -488,7 +393,7 @@ private fun generateRecommendation(type: String?): String {
             AlertType.UNKNOWN -> "Unknown event detected. Please review and tell me what to do."
             AlertType.UNKNOWN_FACE -> "An unknown face has been detected. Please verify."
         }
-    } catch (e: IllegalArgumentException) {
+    } catch (_: IllegalArgumentException) {
         "Please review the alert details and choose an action."
     }
 }

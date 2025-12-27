@@ -10,12 +10,40 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
@@ -25,10 +53,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.example.guardianeye.R
+import com.example.guardianeye.ai.AiModelManager
 import com.example.guardianeye.ui.theme.GuardianEyeTheme
 import com.example.guardianeye.utils.PreferenceManager
 import com.google.firebase.auth.EmailAuthProvider
@@ -39,6 +69,7 @@ import kotlinx.coroutines.launch
 class SettingsFragment : Fragment() {
 
     private lateinit var preferenceManager: PreferenceManager
+    private lateinit var aiModelManager: AiModelManager
     
     // State to track which priority sound is being picked
     private var currentPickingPriority: String? = null
@@ -48,6 +79,9 @@ class SettingsFragment : Fragment() {
     private val highSoundName = mutableStateOf("Default")
     private val mediumSoundName = mutableStateOf("Default")
     private val lowSoundName = mutableStateOf("Default")
+    
+    // State for Footage Directory
+    private val footageDirectoryUri = mutableStateOf<Uri?>(null)
 
     private val pickRingtone = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
@@ -79,15 +113,31 @@ class SettingsFragment : Fragment() {
             currentPickingPriority = null
         }
     }
+    
+    private val pickDirectory = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            context?.contentResolver?.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            lifecycleScope.launch {
+                preferenceManager.saveFootageDirectory(uri.toString())
+                footageDirectoryUri.value = uri
+                Toast.makeText(context, "Footage Directory Saved", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        preferenceManager = PreferenceManager(requireContext())
+        val context = requireContext()
+        preferenceManager = PreferenceManager(context)
+        aiModelManager = AiModelManager(context)
         
-        return ComposeView(requireContext()).apply {
+        return ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 GuardianEyeTheme {
@@ -113,6 +163,8 @@ class SettingsFragment : Fragment() {
         // State
         var emergencyContact by remember { mutableStateOf("") }
         var streamUrl by remember { mutableStateOf("") }
+        var aiModelUrl by remember { mutableStateOf("") }
+        var aiModelFilename by remember { mutableStateOf("") }
         
         var intruderAlert by remember { mutableStateOf(true) }
         var faceRecognitionAlert by remember { mutableStateOf(true) }
@@ -123,10 +175,21 @@ class SettingsFragment : Fragment() {
 
         val showChangePasswordDialog = remember { mutableStateOf(false) }
 
-        // Load Settings
+        // AI Model Download States
+        var isModelDownloading by remember { mutableStateOf(false) }
+        var downloadProgress by remember { mutableFloatStateOf(0f) }
+        var isModelDownloaded by remember { mutableStateOf(false) }
+
+        // Load Settings & Check Model
         LaunchedEffect(Unit) {
             emergencyContact = preferenceManager.getEmergencyContact() ?: ""
             streamUrl = preferenceManager.getStreamUrl() ?: ""
+            aiModelUrl = preferenceManager.getAiModelUrl() ?: ""
+            aiModelFilename = aiModelManager.getModelName()
+            val savedUriString = preferenceManager.getFootageDirectory()
+            if (!savedUriString.isNullOrEmpty()) {
+                footageDirectoryUri.value = savedUriString.toUri()
+            }
             
             criticalSoundName.value = preferenceManager.getNotificationSoundName("CRITICAL") ?: "Default"
             highSoundName.value = preferenceManager.getNotificationSoundName("HIGH") ?: "Default"
@@ -139,6 +202,56 @@ class SettingsFragment : Fragment() {
             unknownFaceAlert = preferenceManager.getAlertPreference(PreferenceManager.ALERT_UNKNOWN_FACE)
             weaponAlert = preferenceManager.getAlertPreference(PreferenceManager.ALERT_WEAPON)
             screamAlert = preferenceManager.getAlertPreference(PreferenceManager.ALERT_SCREAM)
+
+            isModelDownloaded = aiModelManager.isModelDownloaded()
+        }
+
+        fun downloadModel() {
+            if (aiModelUrl.isBlank()) {
+                Toast.makeText(context, "Please enter a model URL first", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            scope.launch {
+                isModelDownloading = true
+                downloadProgress = 0f
+                
+                aiModelManager.downloadModel(
+                    url = aiModelUrl,
+                    onProgress = { progress -> downloadProgress = progress },
+                    onComplete = { success, error ->
+                        isModelDownloading = false
+                        if (success) {
+                            isModelDownloaded = true
+                            Toast.makeText(context, "AI Model Downloaded", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Download Failed: $error", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            }
+        }
+
+        fun deleteModel() {
+            scope.launch {
+                val success = aiModelManager.deleteModel()
+                if (success) {
+                    isModelDownloaded = false
+                    Toast.makeText(context, "AI Model Deleted", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Failed to delete model", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        
+        fun saveModelName(name: String) {
+            scope.launch {
+                aiModelManager.setModelName(name)
+                aiModelFilename = name
+                // Re-check status for new filename
+                isModelDownloaded = aiModelManager.isModelDownloaded()
+                Toast.makeText(context, "Model Filename Saved", Toast.LENGTH_SHORT).show()
+            }
         }
 
         if (showChangePasswordDialog.value && currentUser != null) {
@@ -154,8 +267,7 @@ class SettingsFragment : Fragment() {
                 .verticalScroll(scrollState)
                 .padding(16.dp)
         ) {
-            // REMOVED Title "Settings"
-
+            
             // Account Section
             SettingsSection(title = stringResource(R.string.section_account)) {
                 Text(
@@ -184,6 +296,84 @@ class SettingsFragment : Fragment() {
                         .padding(top = 16.dp)
                 ) {
                     Text(stringResource(R.string.logout_button_text))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // AI Model Management
+            SettingsSection(title = "AI Chat Model") {
+                if (isModelDownloaded) {
+                    Text("Model Status: Downloaded (Ready)", color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = { deleteModel() },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Delete AI Model")
+                    }
+                } else {
+                    Text("Model Status: Not Downloaded", color = MaterialTheme.colorScheme.error)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Model Filename Input
+                    OutlinedTextField(
+                        value = aiModelFilename,
+                        onValueChange = { aiModelFilename = it },
+                        label = { Text("Target Filename") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = { saveModelName(aiModelFilename) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    ) {
+                        Text("Set Filename")
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // URL Input
+                    OutlinedTextField(
+                        value = aiModelUrl,
+                        onValueChange = { aiModelUrl = it },
+                        label = { Text("Model Download URL") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                preferenceManager.saveAiModelUrl(aiModelUrl)
+                                Toast.makeText(context, "URL Saved", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                    ) {
+                        Text("Save URL")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (isModelDownloading) {
+                        Column {
+                            LinearProgressIndicator(
+                                progress = { downloadProgress },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text("Downloading...", style = MaterialTheme.typography.bodySmall)
+                        }
+                    } else {
+                        Button(
+                            onClick = { downloadModel() },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = aiModelUrl.isNotBlank() && aiModelFilename.isNotBlank()
+                        ) {
+                            Text("Download AI Model")
+                        }
+                    }
                 }
             }
 
@@ -233,6 +423,30 @@ class SettingsFragment : Fragment() {
                         .padding(top = 8.dp)
                 ) {
                     Text(stringResource(R.string.save_stream_button))
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Footage Directory Selection
+                Text(
+                    text = "CCTV Footage Directory",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                val currentDirectory = footageDirectoryUri.value?.path ?: "Not selected"
+                Text(
+                    text = "Current: $currentDirectory",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                Button(
+                    onClick = { pickDirectory.launch(null) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Select Footage Directory")
                 }
             }
 
@@ -409,6 +623,10 @@ class SettingsFragment : Fragment() {
                     onClick = {
                         if (currentPassword.isEmpty() || newPassword.isEmpty() || confirmPassword.isEmpty()) {
                             errorMessage = "All fields are required"
+                            return@Button
+                        }
+                        if (currentPassword == newPassword) {
+                            errorMessage = "New password cannot be same as current password"
                             return@Button
                         }
                         if (newPassword != confirmPassword) {
