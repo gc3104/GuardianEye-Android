@@ -1,0 +1,32 @@
+package com.example.guardianeye.model
+
+import com.google.firebase.Timestamp
+
+data class Alert(
+    val id: String = "",
+    val type: AlertType = AlertType.UNKNOWN,
+    val priority: AlertPriority = AlertPriority.MEDIUM,
+    val timestamp: Timestamp = Timestamp.now(),
+    val description: String = "",
+    val isActionTaken: Boolean = false,
+    val actionTakenType: String? = null,
+    val mediaUrl: String? = null,      // Replaces imageUrl and incidentVideoUrl
+    val mediaType: String? = null       // e.g., "IMAGE" or "VIDEO"
+)
+
+enum class AlertType {
+    UNKNOWN,
+    INTRUDER,
+    FACE_RECOGNITION,
+    MASK_DETECTION,
+    UNKNOWN_FACE,
+    WEAPON,
+    SCREAM
+}
+
+enum class AlertPriority {
+    LOW,
+    MEDIUM,
+    HIGH,
+    CRITICAL
+}

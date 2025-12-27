@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/mobile_navigation"
+    app:startDestination="@+id/loginFragment">
+
+    <action
+        android:id="@+id/action_global_loginFragment"
+        app:destination="@id/loginFragment"
+        app:popUpTo="@id/mobile_navigation"
+        app:popUpToInclusive="true" />
+
+    <fragment
+        android:id="@+id/loginFragment"
+        android:name="com.example.guardianeye.ui.auth.LoginFragment"
+        android:label="Login">
+        <action
+            android:id="@+id/action_loginFragment_to_homeFragment"
+            app:destination="@id/navigation_home"
+            app:popUpTo="@id/loginFragment"
+            app:popUpToInclusive="true" />
+        <action
+            android:id="@+id/action_loginFragment_to_registerFragment"
+            app:destination="@id/registerFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/registerFragment"
+        android:name="com.example.guardianeye.ui.auth.RegisterFragment"
+        android:label="Register">
+        <action
+            android:id="@+id/action_registerFragment_to_homeFragment"
+            app:destination="@id/navigation_home"
+            app:popUpTo="@id/registerFragment"
+            app:popUpToInclusive="true" />
+        <action
+            android:id="@+id/action_registerFragment_to_loginFragment"
+            app:destination="@id/loginFragment"
+            app:popUpTo="@id/registerFragment"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_home"
+        android:name="com.example.guardianeye.ui.home.HomeFragment"
+        android:label="@string/title_home" />
+
+    <fragment
+        android:id="@+id/navigation_alerts"
+        android:name="com.example.guardianeye.ui.alerts.AlertsFragment"
+        android:label="@string/title_notifications">
+        <action
+            android:id="@+id/action_alertsFragment_to_chatFragment"
+            app:destination="@id/navigation_chat" />
+        <action
+            android:id="@+id/action_alertsFragment_to_alertDetailFragment"
+            app:destination="@id/alertDetailFragment" />
+    </fragment>
+    
+    <fragment
+        android:id="@+id/navigation_footage"
+        android:name="com.example.guardianeye.ui.footage.FootageFragment"
+        android:label="Footage" />
+
+    <fragment
+        android:id="@+id/navigation_chat"
+        android:name="com.example.guardianeye.ui.chat.ChatFragment"
+        android:label="@string/title_chat">
+        <argument
+            android:name="alertId"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <argument
+            android:name="alertType"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <argument
+            android:name="alertDesc"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <argument
+            android:name="mediaUrl"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <argument
+            android:name="mediaType"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/alertDetailFragment"
+        android:name="com.example.guardianeye.ui.alerts.AlertDetailFragment"
+        android:label="Resolved Alert">
+        <argument
+            android:name="alertId"
+            app:argType="string" />
+        <argument
+            android:name="alertType"
+            app:argType="string" />
+        <argument
+            android:name="alertDesc"
+            app:argType="string" />
+        <argument
+            android:name="mediaUrl"
+            app:argType="string"
+            app:nullable="true" />
+        <argument
+            android:name="mediaType"
+            app:argType="string"
+            app:nullable="true" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_settings"
+        android:name="com.example.guardianeye.ui.settings.SettingsFragment"
+        android:label="@string/title_settings"
+        tools:layout="@layout/fragment_settings" />
+</navigation>

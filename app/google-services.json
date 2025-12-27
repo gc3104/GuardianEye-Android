@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1038069791754",
+    "project_id": "guardian-eye-569f2",
+    "storage_bucket": "guardian-eye-569f2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1038069791754:android:345b4c5b751a032b3d73f3",
+        "android_client_info": {
+          "package_name": "com.example.guardianeye"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1038069791754-l453vlim2uk2il4b97dn5qotp7tt2lj0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.guardianeye",
+            "certificate_hash": "5bdce544f986d27453711e06616b7782fa5ddd11"
+          }
+        },
+        {
+          "client_id": "1038069791754-8osbph3qvl54asopd81cjcioucjngj09.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB_Tf4TbWbmIwS67CX29BgINfc2YEGzIII"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1038069791754-8osbph3qvl54asopd81cjcioucjngj09.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
