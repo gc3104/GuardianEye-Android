@@ -662,6 +662,7 @@ class SettingsFragment : Fragment() {
                                     isLoading = false
                                     errorMessage = "Re-authentication failed: ${authTask.exception?.message}"
                                 }
+
                             }
                     },
                     enabled = !isLoading
