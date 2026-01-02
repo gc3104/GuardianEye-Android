@@ -1,8 +1,12 @@
 package com.example.guardianeye.model
 
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 import com.google.firebase.Timestamp
 
+@Entity
 data class Alert(
+    @PrimaryKey
     val id: String = "",
     val type: AlertType = AlertType.UNKNOWN,
     val priority: AlertPriority = AlertPriority.MEDIUM,
@@ -10,8 +14,8 @@ data class Alert(
     val description: String = "",
     val isActionTaken: Boolean = false,
     val actionTakenType: String? = null,
-    val mediaUrl: String? = null,      // Replaces imageUrl and incidentVideoUrl
-    val mediaType: String? = null       // e.g., "IMAGE" or "VIDEO"
+    val mediaUrl: String? = null,
+    val mediaType: String? = null
 )
 
 enum class AlertType {

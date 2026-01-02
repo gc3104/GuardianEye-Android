@@ -22,9 +22,13 @@ fun makeCall(context: Context, phoneNumber: String) {
     try {
         val callIntent = Intent(Intent.ACTION_CALL).apply {
             data = "tel:$phoneNumber".toUri()
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(callIntent)
     } catch (e: SecurityException) {
+        e.printStackTrace()
+        Toast.makeText(context, "Failed to place call. Permission denied.", Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
         e.printStackTrace()
         Toast.makeText(context, "Failed to place call.", Toast.LENGTH_SHORT).show()
     }

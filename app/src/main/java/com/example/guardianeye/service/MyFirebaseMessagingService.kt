@@ -2,24 +2,23 @@ package com.example.guardianeye.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.content.Context
+import android.app.PendingIntent
+import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
-import android.os.Bundle
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.net.toUri
-import androidx.navigation.NavDeepLinkBuilder
 import com.example.guardianeye.MainActivity
 import com.example.guardianeye.R
+import com.example.guardianeye.model.AlertPriority
 import com.example.guardianeye.utils.PreferenceManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.runBlocking
-import com.example.guardianeye.model.AlertPriority
 import java.util.Locale
 
 class MyFirebaseMessagingService : FirebaseMessagingService() {
@@ -28,12 +27,13 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         val alertType = remoteMessage.data["type"] ?: "DEFAULT"
         val id = remoteMessage.data["id"] ?: ""
         val description = remoteMessage.data["description"] ?: ""
-        val videoUrl = remoteMessage.data["videoUrl"] ?: ""
+        val mediaUrl = remoteMessage.data["mediaUrl"] ?: ""
+        val mediaType = remoteMessage.data["mediaType"] ?: ""
         val priorityString = remoteMessage.data["priority"] ?: "MEDIUM"
         
         remoteMessage.notification?.let {
             if (shouldShowNotification(alertType)) {
-                sendNotification(it.title ?: "Alert", it.body ?: "New Alert Detected", alertType, id, description, videoUrl, priorityString)
+                sendNotification(it.title ?: "Alert", it.body ?: "New Alert Detected", alertType, id, description, mediaUrl, mediaType, priorityString)
             }
         }
     }
@@ -74,25 +74,29 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
-    private fun sendNotification(title: String, messageBody: String, alertType: String, id: String, description: String, videoUrl: String, priorityString: String) {
-        val pendingIntent = NavDeepLinkBuilder(this)
-            .setComponentName(MainActivity::class.java)
-            .setGraph(R.navigation.mobile_navigation)
-            .setDestination(R.id.navigation_chat) // NAVIGATE TO CHAT
-            .setArguments(Bundle().apply {
-                putString("alertId", id)
-                putString("alertType", alertType)
-                putString("alertDesc", description)
-                putString("videoUrl", videoUrl)
-            })
-            .createPendingIntent()
+    private fun sendNotification(title: String, messageBody: String, alertType: String, id: String, description: String, mediaUrl: String, mediaType: String, priorityString: String) {
+        // Deep link intent to MainActivity
+        // Since we are using Compose Navigation, we can just launch MainActivity and it will handle state
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra("alertId", id)
+            putExtra("alertType", alertType)
+            putExtra("alertDesc", description)
+            putExtra("mediaUrl", mediaUrl)
+            putExtra("mediaType", mediaType)
+        }
+        
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+        )
 
         var soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val prefs = PreferenceManager(this)
         
         val priority = try {
             AlertPriority.valueOf(priorityString.uppercase())
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             AlertPriority.MEDIUM
         }
 

@@ -63,5 +63,10 @@
     <string name="intruder_alert_title">Intruder Alert</string>
     <string name="fire_alert_title">Fire Alert</string>
     <string name="fall_detection_alert_title">Fall Detection Alert</string>
+    <string name="panic_button">Panic Button</string>
+    <string name="panic_sending_alert">Sending Emergency Alert in</string>
+    <string name="cancel">CANCEL</string>
+    <string name="panic_countdown_start">5</string>
+    <string name="footage">Footage</string>
 
 </resources>

@@ -2,19 +2,16 @@ package com.example.guardianeye.ai
 
 import android.content.Context
 import android.util.Log
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.example.guardianeye.utils.PreferenceManager
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
+import java.util.UUID
 
-/**
- * Manages the AI Model: downloading, initialization, deletion, and providing the instance.
- */
 class AiModelManager(private val context: Context) {
 
     private val preferenceManager = PreferenceManager(context)
@@ -33,7 +30,7 @@ class AiModelManager(private val context: Context) {
         return withContext(Dispatchers.IO) {
             val modelName = getModelName()
             val file = File(context.filesDir, modelName)
-            file.exists()
+            file.exists() && file.length() > 0
         }
     }
 
@@ -47,7 +44,8 @@ class AiModelManager(private val context: Context) {
                 try {
                     val options = LlmInference.LlmInferenceOptions.builder()
                         .setModelPath(modelFile.absolutePath)
-                        .setMaxTokens(512)
+                        .setMaxTokens(1024)
+                        .setPreferredBackend(LlmInference.Backend.CPU)
                         .build()
                     llmInference = LlmInference.createFromOptions(context, options)
                     isModelReady = true
@@ -66,60 +64,21 @@ class AiModelManager(private val context: Context) {
         return if (isModelReady) llmInference else null
     }
 
-    suspend fun downloadModel(
-        url: String, 
-        onProgress: (Float) -> Unit, 
-        onComplete: (Boolean, String?) -> Unit
-    ) {
-        withContext(Dispatchers.IO) {
-            val modelName = getModelName()
-            val modelFile = File(context.filesDir, modelName)
-            val client = OkHttpClient()
-            val request = Request.Builder().url(url).build()
-
-            try {
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) throw IOException("Unexpected code $response")
-                    
-                    val body = response.body
-                    val contentLength = body.contentLength()
-                    val inputStream = body.byteStream()
-                    val outputStream = FileOutputStream(modelFile)
-                    
-                    val buffer = ByteArray(8 * 1024)
-                    var bytesRead: Int
-                    var totalBytesRead = 0L
-                    
-                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                        outputStream.write(buffer, 0, bytesRead)
-                        totalBytesRead += bytesRead
-                        if (contentLength > 0) {
-                            val progress = totalBytesRead.toFloat() / contentLength.toFloat()
-                            withContext(Dispatchers.Main) {
-                                onProgress(progress)
-                            }
-                        }
-                    }
-                    outputStream.flush()
-                    outputStream.close()
-                    inputStream.close()
-                }
-                
-                // Verify initialization immediately after download
-                val success = initializeModel()
-                withContext(Dispatchers.Main) {
-                    onComplete(success, if (success) null else "Download successful but initialization failed")
-                }
-
-            } catch (e: Exception) {
-                Log.e("AiModelManager", "Download failed", e)
-                withContext(Dispatchers.Main) {
-                    onComplete(false, e.message)
-                }
-                // Cleanup partial file
-                if (modelFile.exists()) modelFile.delete()
-            }
-        }
+    fun downloadModel(url: String, filename: String): UUID {
+        val workManager = WorkManager.getInstance(context)
+        
+        val inputData = workDataOf(
+            DownloadWorker.KEY_URL to url,
+            DownloadWorker.KEY_FILENAME to filename
+        )
+        
+        val downloadRequest = OneTimeWorkRequestBuilder<DownloadWorker>()
+            .setInputData(inputData)
+            .addTag("model_download")
+            .build()
+            
+        workManager.enqueue(downloadRequest)
+        return downloadRequest.id
     }
 
     suspend fun deleteModel(): Boolean {
@@ -141,21 +100,77 @@ class AiModelManager(private val context: Context) {
 
     fun generateSystemInstructions(): String {
         return """
-            You are GuardianEye AI, a home security assistant.
-            Your role is to analyze alerts and help the user take action.
-            
-            IMPORTANT:
-            1. Keep responses concise and focused on safety.
-            2. If you recommend an action, verify if it's available.
-            3. Do NOT execute actions yourself. Instead, output the intent in JSON format if the user explicitly confirms an action.
-            4. If the user asks for help, suggest "Call Emergency" or "Send SMS".
-            
-            Format your response as plain text for normal conversation.
-            Only if the user confirms an action (like "yes, call them" or "ignore this"), append a JSON block at the very end:
-            ```json
-            { "intent": "CALL" }
-            ```
-            Valid intents: CALL, SMS, RESOLVE, IGNORE, OPEN_SETTINGS.
-        """.trimIndent()
+          You are GuardianEye AI, a home security assistant.
+
+Your task:
+Analyze the user’s message or alert and decide the correct action.
+Respond with a short helpful message and exactly ONE intent.
+
+STRICT RULES (MANDATORY):
+1. Output ONLY a single valid JSON object.
+2. Do NOT add explanations, markdown, or extra text.
+3. The JSON MUST contain EXACTLY two fields: "text" and "intent".
+4. The value of "intent" MUST be one of the allowed intents.
+5. NEVER invent new intents.
+6. If the intent is unclear or no action is required, use "NONE".
+7. If you output anything other than valid JSON, the response is invalid.
+
+ALLOWED INTENTS:
+CALL
+SMS
+RESOLVE
+IGNORE
+OPEN_SETTINGS
+NONE
+
+RESPONSE FORMAT (MANDATORY):
+{"text":"your response","intent":"INTENT"}
+
+INTENT SELECTION GUIDE:
+- CALL → Immediate danger, intruder, fire, violence, emergency.
+- SMS → Suspicious activity, warning, notify emergency contact.
+- RESOLVE → User confirms the issue is handled or safe.
+- IGNORE → False alarm, dismiss alert.
+- OPEN_SETTINGS → User asks to change or open app settings.
+- NONE → Monitoring, acknowledgement, unclear request.
+
+FEW-SHOT EXAMPLES:
+
+User:
+Someone is inside my house. I hear noises.
+Assistant:
+{"text":"Calling your emergency contact now.","intent":"CALL"}
+
+User:
+There is a person near my gate but I am not sure.
+Assistant:
+{"text":"I will send an SMS to your emergency contact.","intent":"SMS"}
+
+User:
+It's okay now. It was just my family member.
+Assistant:
+{"text":"Alert resolved. Returning to monitoring mode.","intent":"RESOLVE"}
+
+User:
+Ignore this alert. Nothing is wrong.
+Assistant:
+{"text":"Understood. I will ignore this alert.","intent":"IGNORE"}
+
+User:
+Open notification settings.
+Assistant:
+{"text":"Opening settings.","intent":"OPEN_SETTINGS"}
+
+User:
+Okay, just keep watching.
+Assistant:
+{"text":"Understood. I will continue monitoring.","intent":"NONE"}
+
+IMPORTANT:
+- Always follow the RESPONSE FORMAT.
+- Always output JSON only.
+- Do not repeat the user message.
+- Do not add extra keys or text.
+      """.trimIndent()
     }
 }

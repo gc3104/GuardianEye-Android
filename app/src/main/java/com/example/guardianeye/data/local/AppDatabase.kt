@@ -1,0 +1,35 @@
+package com.example.guardianeye.data.local
+
+import android.content.Context
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
+import com.example.guardianeye.model.Alert
+import com.example.guardianeye.model.ChatMessage
+
+@Database(entities = [Alert::class, ChatMessage::class], version = 2, exportSchema = false)
+@TypeConverters(Converters::class)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun alertDao(): AlertDao
+    abstract fun chatDao(): ChatDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: AppDatabase? = null
+
+        fun getDatabase(context: Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "guardian_eye_database"
+                )
+                    .fallbackToDestructiveMigration(false) // For simplicity in development, wipe DB on schema change
+                    .build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
+}

@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
@@ -38,6 +39,20 @@ class PreferenceManager(private val context: Context) {
         val SOUND_NAME_MEDIUM = stringPreferencesKey("sound_name_medium")
         val SOUND_LOW = stringPreferencesKey("sound_low")
         val SOUND_NAME_LOW = stringPreferencesKey("sound_name_low")
+
+        // Panic Button Preferences
+        val PANIC_TIMER_SECONDS = intPreferencesKey("panic_timer_seconds")
+        val PANIC_MESSAGE = stringPreferencesKey("panic_message")
+
+        // Security Preferences
+        val MPIN_TIMEOUT_SECONDS = intPreferencesKey("mpin_timeout_seconds")
+        
+        // Data Saving Preferences
+        val SAVE_ALERTS_LOCALLY = booleanPreferencesKey("save_alerts_locally")
+        val SAVE_CHATS_LOCALLY = booleanPreferencesKey("save_chats_locally")
+
+        // AI Preferences
+        val USE_CHATBOT = booleanPreferencesKey("use_chatbot")
     }
 
     suspend fun saveEmergencyContact(contact: String) {
@@ -148,9 +163,47 @@ class PreferenceManager(private val context: Context) {
         }
     }
 
-    suspend fun getAlertPreference(key: Preferences.Key<Boolean>): Boolean {
+    suspend fun getAlertPreference(key: Preferences.Key<Boolean>, defaultValue: Boolean = true): Boolean {
         return context.dataStore.data.map { preferences ->
-            preferences[key] ?: true // Default to true
+            preferences[key] ?: defaultValue
+        }.first()
+    }
+
+    // Panic Button Preference Functions
+    suspend fun savePanicTimer(seconds: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PANIC_TIMER_SECONDS] = seconds
+        }
+    }
+
+    suspend fun getPanicTimer(): Int {
+        return context.dataStore.data.map { preferences ->
+            preferences[PANIC_TIMER_SECONDS] ?: 5 // Default 5 seconds
+        }.first()
+    }
+
+    suspend fun savePanicMessage(message: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PANIC_MESSAGE] = message
+        }
+    }
+
+    suspend fun getPanicMessage(): String {
+        return context.dataStore.data.map { preferences ->
+            preferences[PANIC_MESSAGE] ?: "Emergency! Please help!"
+        }.first()
+    }
+
+    // MPIN Functions
+    suspend fun saveMpinTimeout(seconds: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[MPIN_TIMEOUT_SECONDS] = seconds
+        }
+    }
+
+    suspend fun getMpinTimeout(): Int {
+        return context.dataStore.data.map { preferences ->
+            preferences[MPIN_TIMEOUT_SECONDS] ?: 60 // Default 60 seconds
         }.first()
     }
 }

@@ -1,10 +1,11 @@
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.google.services)
     id("androidx.navigation.safeargs.kotlin")
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+
 }
 
 android {
@@ -42,7 +43,6 @@ android {
     }
 }
 
-// Configure Kotlin compiler options via tasks to avoid DSL issues in the android block
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
@@ -62,11 +62,13 @@ dependencies {
     // Navigation
     implementation(libs.androidx.navigation.fragment.ktx)
     implementation(libs.androidx.navigation.ui.ktx)
+    implementation(libs.androidx.navigation.compose)
 
     // Lifecycle
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.livedata.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     // Media
     implementation(libs.androidx.media3.exoplayer)
@@ -92,6 +94,12 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.room.common.jvm)
+    implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.compose.foundation)
+
+    ksp(libs.androidx.room.compiler)
+
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
@@ -108,4 +116,15 @@ dependencies {
 
     // MediaPipe & GenAI
     implementation(libs.tasks.genai)
+
+    // Biometric & Security
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.security.crypto)
+    implementation("com.google.crypto.tink:tink-android:1.12.0")
+
+    // WorkManager
+    implementation(libs.androidx.work.runtime.ktx)
+
+    // FFmpeg
+        //implementation(libs.ffmpeg.kit.full)
 }
