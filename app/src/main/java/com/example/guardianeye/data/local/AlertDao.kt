@@ -24,4 +24,13 @@ interface AlertDao {
 
     @Query("DELETE FROM alert")
     suspend fun deleteAllAlerts()
+
+    // Assuming timestamp in Alert is stored as a comparable format (e.g. Long seconds/millis in Room type converter)
+    // If it's a complex object, make sure TypeConverters are set up. 
+    // Usually Timestamp is converted to Long.
+    @Query("DELETE FROM alert WHERE timestamp < :timestamp")
+    suspend fun deleteAlertsOlderThan(timestamp: Long)
+
+    @Query("DELETE FROM alert WHERE id = :id")
+    suspend fun deleteAlert(id: String)
 }

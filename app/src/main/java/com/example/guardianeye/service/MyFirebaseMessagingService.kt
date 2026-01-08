@@ -12,15 +12,24 @@ import androidx.core.app.NotificationCompat
 import androidx.core.net.toUri
 import com.example.guardianeye.MainActivity
 import com.example.guardianeye.R
+import com.example.guardianeye.data.local.AppDatabase
+import com.example.guardianeye.data.repository.AlertRepository
+import com.example.guardianeye.model.Alert
 import com.example.guardianeye.model.AlertPriority
+import com.example.guardianeye.model.AlertType
 import com.example.guardianeye.utils.PreferenceManager
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.Locale
 
+@OptIn(DelicateCoroutinesApi::class)
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
@@ -30,6 +39,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         val mediaUrl = remoteMessage.data["mediaUrl"] ?: ""
         val mediaType = remoteMessage.data["mediaType"] ?: ""
         val priorityString = remoteMessage.data["priority"] ?: "MEDIUM"
+
+        // Save alert locally if enabled
+        saveAlert(id, alertType, description, mediaUrl, mediaType, priorityString)
         
         remoteMessage.notification?.let {
             if (shouldShowNotification(alertType)) {
@@ -59,6 +71,26 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             .addOnFailureListener { e -> Log.w("MyFirebaseMsgService", "Error writing FCM token", e) }
     }
 
+    private fun saveAlert(id: String, type: String, description: String, mediaUrl: String, mediaType: String, priority: String) {
+        val prefs = PreferenceManager(this)
+        GlobalScope.launch {
+            if (prefs.getAlertPreference(PreferenceManager.SAVE_ALERTS_LOCALLY)) {
+                val database = AppDatabase.getDatabase(this@MyFirebaseMessagingService)
+                val alertRepository = AlertRepository(database.alertDao(), prefs)
+                val alert = Alert(
+                    id = id,
+                    type = AlertType.valueOf(type),
+                    description = description,
+                    timestamp = Timestamp.now(),
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
+                    priority = AlertPriority.valueOf(priority.uppercase(Locale.getDefault()))
+                )
+                alertRepository.insert(alert)
+            }
+        }
+    }
+
     private fun shouldShowNotification(type: String): Boolean {
         val prefs = PreferenceManager(this)
         return runBlocking {
@@ -76,7 +108,6 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     private fun sendNotification(title: String, messageBody: String, alertType: String, id: String, description: String, mediaUrl: String, mediaType: String, priorityString: String) {
         // Deep link intent to MainActivity
-        // Since we are using Compose Navigation, we can just launch MainActivity and it will handle state
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra("alertId", id)

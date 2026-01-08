@@ -1,5 +1,6 @@
 package com.example.guardianeye.ui.alerts
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,8 +15,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,13 +31,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,9 +51,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.guardianeye.model.Alert
 import com.example.guardianeye.model.AlertPriority
 import com.google.firebase.Timestamp
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Locale
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AlertsScreen(
     viewModel: AlertsViewModel = viewModel(),
@@ -54,14 +64,60 @@ fun AlertsScreen(
 ) {
     val alerts by viewModel.alerts.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+
+    if (isLoading) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+    } else {
+        val pagerState = rememberPagerState(pageCount = { 2 })
+        val scope = rememberCoroutineScope()
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            PrimaryTabRow(selectedTabIndex = pagerState.currentPage) {
+                Tab(
+                    selected = pagerState.currentPage == 0,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
+                    text = { Text("Unresolved") }
+                )
+                Tab(
+                    selected = pagerState.currentPage == 1,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
+                    text = { Text("Resolved") }
+                )
+            }
+
+            HorizontalPager(state = pagerState) { page ->
+                val isResolvedTab = page == 1
+                AlertsList(
+                    alerts = alerts,
+                    isResolvedTab = isResolvedTab,
+                    onNavigateToChat = onNavigateToChat,
+                    onNavigateToDetail = onNavigateToDetail,
+                    onDelete = { id -> viewModel.deleteAlert(id) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun AlertsList(
+    alerts: List<Alert>,
+    isResolvedTab: Boolean,
+    onNavigateToChat: (Alert) -> Unit,
+    onNavigateToDetail: (Alert) -> Unit,
+    onDelete: (String) -> Unit
+) {
     var searchQuery by remember { mutableStateOf("") }
     var sortOption by remember { mutableStateOf(SortOption.DATE_DESC) }
     var showSortMenu by remember { mutableStateOf(false) }
 
-    val filteredAlerts = remember(alerts, searchQuery, sortOption) {
-        var list = alerts.filter { 
-            it.type.name.contains(searchQuery, ignoreCase = true) || 
-            it.description.contains(searchQuery, ignoreCase = true)
+    val filteredAlerts = remember(alerts, searchQuery, sortOption, isResolvedTab) {
+        var list = alerts.filter { alert ->
+            alert.isActionTaken == isResolvedTab &&
+            (alert.type.name.contains(searchQuery, ignoreCase = true) || 
+             alert.description.contains(searchQuery, ignoreCase = true))
         }
         
         list = when(sortOption) {
@@ -73,10 +129,12 @@ fun AlertsScreen(
         list
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize()) {
         // Search & Sort Header
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
@@ -117,31 +175,30 @@ fun AlertsScreen(
                 }
             }
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
 
-        if (isLoading) {
+        if (filteredAlerts.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                Text("No ${if (isResolvedTab) "resolved" else "unresolved"} alerts found.")
             }
         } else {
-            if (filteredAlerts.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No alerts found.")
-                }
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(filteredAlerts) { alert ->
-                        AlertItem(alert) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+            ) {
+                items(filteredAlerts) { alert ->
+                    AlertItem(
+                        alert = alert, 
+                        onClick = {
                             if (alert.isActionTaken) {
                                 onNavigateToDetail(alert)
                             } else {
                                 onNavigateToChat(alert)
                             }
-                        }
-                    }
+                        },
+                        onDelete = { onDelete(alert.id) }
+                    )
                 }
             }
         }
@@ -149,12 +206,13 @@ fun AlertsScreen(
 }
 
 @Composable
-fun AlertItem(alert: Alert, onClick: () -> Unit) {
+fun AlertItem(alert: Alert, onClick: () -> Unit, onDelete: () -> Unit) {
     val priorityColor = when (alert.priority) {
         AlertPriority.CRITICAL -> MaterialTheme.colorScheme.error
         AlertPriority.HIGH -> Color(0xFFFFA500) // Orange
         else -> MaterialTheme.colorScheme.primary
     }
+    var showMenu by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -199,8 +257,28 @@ fun AlertItem(alert: Alert, onClick: () -> Unit) {
                 Text(
                     text = "Resolved",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.Green
+                    color = Color.Green,
+                    modifier = Modifier.padding(end = 8.dp)
                 )
+            }
+            
+            Box {
+                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Options")
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Delete") },
+                        leadingIcon = { Icon(Icons.Default.Delete, null) },
+                        onClick = { 
+                            onDelete()
+                            showMenu = false 
+                        }
+                    )
+                }
             }
         }
     }

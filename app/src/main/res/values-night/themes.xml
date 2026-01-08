@@ -12,8 +12,5 @@
         <!-- Status bar color. -->
         <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
     </style>
-    
-    <style name="Theme.GuardianEye.AppBarOverlay" parent="ThemeOverlay.Material3.Dark.ActionBar" />
 
-    <style name="Theme.GuardianEye.PopupOverlay" parent="ThemeOverlay.Material3.Light" />
 </resources>

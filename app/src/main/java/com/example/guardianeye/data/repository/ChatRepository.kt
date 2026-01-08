@@ -20,4 +20,11 @@ class ChatRepository(private val chatDao: ChatDao) {
             chatDao.deleteAllMessages()
         }
     }
+
+    suspend fun deleteOldMessages(retentionPeriodDays: Int) {
+        withContext(Dispatchers.IO) {
+            val cutoff = System.currentTimeMillis() - (retentionPeriodDays * 24 * 60 * 60 * 1000L)
+            chatDao.deleteMessagesOlderThan(cutoff)
+        }
+    }
 }

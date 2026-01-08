@@ -2,7 +2,6 @@ package com.example.guardianeye.ui.settings
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,7 +21,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -102,39 +100,19 @@ fun SettingsScreen(
         )
     )
 
-    SettingsScaffold(modifier) {
+    // Using Column directly instead of SettingsScaffold wrapper as scaffold is at root
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+    ) {
         LazyColumn(
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
-
-
-
             items(items) { item ->
                 SettingsMenuItem(item)
             }
         }
-    }
-}
-
-/* ---------------------------------- */
-/* Scaffold Wrapper */
-/* ---------------------------------- */
-
-@Composable
-private fun SettingsScaffold(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Surface(
-        modifier = modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            content = content
-        )
     }
 }
 

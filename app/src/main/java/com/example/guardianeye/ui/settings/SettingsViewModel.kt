@@ -14,6 +14,7 @@ import com.example.guardianeye.ai.AiModelManager
 import com.example.guardianeye.data.local.AppDatabase
 import com.example.guardianeye.data.repository.AlertRepository
 import com.example.guardianeye.data.repository.ChatRepository
+import com.example.guardianeye.data.repository.FootageManager
 import com.example.guardianeye.ui.auth.authcheck.MpinStorage
 import com.example.guardianeye.utils.PreferenceManager
 import com.google.firebase.auth.FirebaseAuth
@@ -34,8 +35,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val workManager = WorkManager.getInstance(application)
 
     private val database = AppDatabase.getDatabase(application)
-    private val chatRepository = ChatRepository(database.chatDao())
-    private val alertRepository = AlertRepository(database.alertDao())
+    private val chatRepository: ChatRepository
+    private val alertRepository: AlertRepository
+    private val footageManager: FootageManager = FootageManager(application)
 
     // State
     private val _settingsState = MutableStateFlow(SettingsState())
@@ -54,6 +56,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private var currentDownloadId: UUID? = null
 
     init {
+        chatRepository = ChatRepository(database.chatDao())
+        alertRepository = AlertRepository(database.alertDao(), preferenceManager)
         loadSettings()
     }
     
@@ -97,7 +101,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 it.copy(
                     currentUser = auth.currentUser,
                     emergencyContact = preferenceManager.getEmergencyContact() ?: "",
-                    streamUrl = preferenceManager.getStreamUrl() ?: "",
+                    // Default to 10.0.2.2 for Android Emulator access to localhost
+                    streamUrl = preferenceManager.getStreamUrl() ?: "ws://10.0.2.2:8000/ws",
                     aiModelUrl = preferenceManager.getAiModelUrl() ?: "",
                     aiModelFilename = aiModelManager.getModelName(),
                     footageDirectoryUri = preferenceManager.getFootageDirectory()?.toUri(),
@@ -119,7 +124,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     panicMessage = preferenceManager.getPanicMessage(),
                     
                     isMpinSet = isMpinSet,
-                    mpinTimeoutStr = preferenceManager.getMpinTimeout().toString()
+                    mpinTimeoutStr = preferenceManager.getMpinTimeout().toString(),
+
+                    saveAlertsLocally = preferenceManager.getAlertPreference(PreferenceManager.SAVE_ALERTS_LOCALLY),
+                    saveChatsLocally = preferenceManager.getAlertPreference(PreferenceManager.SAVE_CHATS_LOCALLY),
+                    useChatbot = preferenceManager.getAlertPreference(PreferenceManager.USE_CHATBOT)
                 )
             }
         }
@@ -219,6 +228,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                      PreferenceManager.ALERT_UNKNOWN_FACE -> it.copy(unknownFaceAlert = enabled)
                      PreferenceManager.ALERT_WEAPON -> it.copy(weaponAlert = enabled)
                      PreferenceManager.ALERT_SCREAM -> it.copy(screamAlert = enabled)
+                     PreferenceManager.SAVE_ALERTS_LOCALLY -> it.copy(saveAlertsLocally = enabled)
+                     PreferenceManager.SAVE_CHATS_LOCALLY -> it.copy(saveChatsLocally = enabled)
+                     PreferenceManager.USE_CHATBOT -> it.copy(useChatbot = enabled)
                      else -> it
                  }
              }
@@ -292,12 +304,26 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             showToast("Chat history cleared")
         }
     }
+    
+    fun deleteOldChats(days: Int) {
+         viewModelScope.launch {
+             chatRepository.deleteOldMessages(days)
+             showToast("Deleted chats older than $days days")
+         }
+    }
 
     fun clearAlertHistory() {
         viewModelScope.launch {
             alertRepository.deleteAllAlerts()
             showToast("Alert history cleared")
         }
+    }
+    
+    fun deleteOldAlerts(days: Int) {
+         viewModelScope.launch {
+             alertRepository.deleteOldAlerts(days)
+             showToast("Deleted alerts older than $days days")
+         }
     }
 
     fun deleteOldFootage(retentionDays: Int) {
@@ -308,6 +334,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 return@launch
             }
 
+            // Using the new FootageManager for deleting raw files logic if needed, 
+            // but for simple retention deletion, we can reuse similar logic or add to FootageManager.
+            // For simplicity/consistency, let's keep the simple logic here or delegate.
+            // Let's delegate part of it or keep it simple as it was for now, 
+            // but the "Run Lifecycle" button is the main feature.
+            
+            // Re-implementing using FootageManager call would be cleaner but let's stick to the existing method 
+            // unless we want to move everything to FootageManager.
+            // Actually, let's keep the "Delete Now" button logic simple here for raw files.
+            
             val context = getApplication<Application>()
             try {
                 val docFile = DocumentFile.fromTreeUri(context, directoryUri)
@@ -334,43 +370,38 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
     
-    fun compressFootage(period: String) {
+    fun runSmartArchival(compressionDelay: Int, archivePeriod: String, archiveRetention: Int) {
         viewModelScope.launch {
             val directoryUri = _settingsState.value.footageDirectoryUri
             if (directoryUri == null) {
                 showToast("No footage directory selected")
                 return@launch
             }
-
-            val context = getApplication<Application>()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                showToast("Compression simulation started for $period footage")
-                
-                // Note: True video compression on Android requires complex MediaCodec implementation 
-                // or libraries like ffmpeg-kit. Due to complexity and dependency constraints,
-                // we are implementing a file renaming strategy to 'simulate' marking files for archival
-                // or using Android's built-in storage capabilities if applicable.
-                
-                withContext(Dispatchers.IO) {
-                    try {
-                        val docFile = DocumentFile.fromTreeUri(context, directoryUri)
-                        docFile?.listFiles()?.forEach { file ->
-                            if (file.isFile && (file.name?.endsWith(".mp4") == true)) {
-                                // In a real app, this is where we would:
-                                // 1. Input file -> MediaCodec/FFmpeg -> Output Compressed File
-                                // 2. Delete Input File
-                                
-                                // Simulation:
-                                // val newName = "compressed_${file.name}"
-                                // file.renameTo(newName) 
-                            }
-                        }
-                    } catch (e: Exception) {
-                        showToast("Error compressing footage: ${e.message}")
-                    }
-                }
-            } else {
-                showToast("Compression requires Android 10+")
+            
+            showToast("Starting lifecycle management...")
+            try {
+                footageManager.runLifecycle(directoryUri, compressionDelay, archivePeriod, archiveRetention)
+                showToast("Lifecycle management completed")
+            } catch (e: Exception) {
+                showToast("Error during lifecycle management: ${e.message}")
+            }
+        }
+    }
+    
+    fun deleteAllFootage() {
+        viewModelScope.launch {
+            val directoryUri = _settingsState.value.footageDirectoryUri
+            if (directoryUri == null) {
+                showToast("No footage directory selected")
+                return@launch
+            }
+            
+            showToast("Deleting ALL footage...")
+            try {
+                footageManager.deleteAllFootage(directoryUri)
+                showToast("All footage deleted")
+            } catch (e: Exception) {
+                showToast("Error deleting footage: ${e.message}")
             }
         }
     }
@@ -410,5 +441,9 @@ data class SettingsState(
     val panicMessage: String = "",
     
     val isMpinSet: Boolean = false,
-    val mpinTimeoutStr: String = "60"
+    val mpinTimeoutStr: String = "60",
+
+    val saveAlertsLocally: Boolean = true,
+    val saveChatsLocally: Boolean = true,
+    val useChatbot: Boolean = true
 )

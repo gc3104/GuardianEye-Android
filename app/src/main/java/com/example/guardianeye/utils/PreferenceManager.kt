@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
@@ -53,6 +54,13 @@ class PreferenceManager(private val context: Context) {
 
         // AI Preferences
         val USE_CHATBOT = booleanPreferencesKey("use_chatbot")
+
+        // Retention & Archival Preferences
+        val FOOTAGE_RETENTION_DAYS = intPreferencesKey("footage_retention_days")
+        val ARCHIVE_RETENTION_DAYS = intPreferencesKey("archive_retention_days")
+        val COMPRESSION_DELAY_DAYS = intPreferencesKey("compression_delay_days")
+        val ALERT_RETENTION_DAYS = intPreferencesKey("alert_retention_days")
+        val CHAT_RETENTION_DAYS = intPreferencesKey("chat_retention_days")
     }
 
     suspend fun saveEmergencyContact(contact: String) {
@@ -206,4 +214,33 @@ class PreferenceManager(private val context: Context) {
             preferences[MPIN_TIMEOUT_SECONDS] ?: 60 // Default 60 seconds
         }.first()
     }
+
+    // Retention Preferences
+    suspend fun saveIntPreference(key: Preferences.Key<Int>, value: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[key] = value
+        }
+    }
+
+    suspend fun getIntPreference(key: Preferences.Key<Int>, defaultValue: Int): Int {
+        return context.dataStore.data.map { preferences ->
+            preferences[key] ?: defaultValue
+        }.first()
+    }
+
+    // Retention & Archival Specific Accessors
+    suspend fun saveFootageRetentionDays(days: Int) = saveIntPreference(FOOTAGE_RETENTION_DAYS, days)
+    suspend fun getFootageRetentionDays() = getIntPreference(FOOTAGE_RETENTION_DAYS, 7)
+
+    suspend fun saveArchiveRetentionDays(days: Int) = saveIntPreference(ARCHIVE_RETENTION_DAYS, days)
+    suspend fun getArchiveRetentionDays() = getIntPreference(ARCHIVE_RETENTION_DAYS, 30)
+
+    suspend fun saveCompressionDelayDays(days: Int) = saveIntPreference(COMPRESSION_DELAY_DAYS, days)
+    suspend fun getCompressionDelayDays() = getIntPreference(COMPRESSION_DELAY_DAYS, 1)
+
+    suspend fun saveAlertRetentionDays(days: Int) = saveIntPreference(ALERT_RETENTION_DAYS, days)
+    suspend fun getAlertRetentionDays() = getIntPreference(ALERT_RETENTION_DAYS, 30)
+
+    suspend fun saveChatRetentionDays(days: Int) = saveIntPreference(CHAT_RETENTION_DAYS, days)
+    suspend fun getChatRetentionDays() = getIntPreference(CHAT_RETENTION_DAYS, 30)
 }
