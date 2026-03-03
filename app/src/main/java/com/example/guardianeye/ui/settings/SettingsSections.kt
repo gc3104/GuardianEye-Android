@@ -12,12 +12,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
@@ -25,14 +28,18 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,11 +51,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.guardianeye.ui.auth.authcheck.MpinStorage
-import com.example.guardianeye.utils.PreferenceManager
 import kotlin.math.roundToInt
 
 // Enum for MPIN dialog mode
@@ -76,6 +83,7 @@ fun SettingsToastObserver(viewModel: SettingsViewModel) {
 fun LabeledTextField(
     value: String,
     label: String,
+    modifier: Modifier = Modifier,
     keyboardType: KeyboardType = KeyboardType.Text,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     onValueChange: (String) -> Unit
@@ -86,7 +94,7 @@ fun LabeledTextField(
         label = { Text(label) },
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         visualTransformation = visualTransformation,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         singleLine = true
     )
 }
@@ -108,9 +116,14 @@ fun ActionButton(
 }
 
 @Composable
-fun SwitchSetting(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+fun SwitchSetting(
+    title: String,
+    checked: Boolean,
+    modifier: Modifier = Modifier,
+    onCheckedChange: (Boolean) -> Unit
+) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -125,11 +138,12 @@ fun SliderSetting(
     title: String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
     displayValue: (Float) -> String = { it.toInt().toString() }
 ) {
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+    Column(modifier = modifier.padding(vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(displayValue(value), style = MaterialTheme.typography.bodySmall)
@@ -148,11 +162,12 @@ fun DropdownSetting(
     title: String,
     options: List<String>,
     selectedOption: String,
+    modifier: Modifier = Modifier,
     onOptionSelected: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+    Column(modifier = modifier.padding(vertical = 8.dp)) {
         Text(title, style = MaterialTheme.typography.bodyMedium)
         Box(
             modifier = Modifier
@@ -188,9 +203,14 @@ fun DropdownSetting(
 }
 
 @Composable
-fun SoundSelectionRow(title: String, currentSound: String, onPick: () -> Unit) {
+fun SoundSelectionRow(
+    title: String,
+    currentSound: String,
+    modifier: Modifier = Modifier,
+    onPick: () -> Unit
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        modifier = modifier.fillMaxWidth().padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -206,7 +226,11 @@ fun SoundSelectionRow(title: String, currentSound: String, onPick: () -> Unit) {
 /* ------------------------- */
 
 @Composable
-fun AccountSettingsScreen(viewModel: SettingsViewModel, onLogout: () -> Unit) {
+fun AccountSettingsScreen(
+    viewModel: SettingsViewModel,
+    onLogout: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     SettingsToastObserver(viewModel)
     val state by viewModel.settingsState.collectAsState()
     var showChangePasswordDialog by remember { mutableStateOf(false) }
@@ -215,7 +239,7 @@ fun AccountSettingsScreen(viewModel: SettingsViewModel, onLogout: () -> Unit) {
         ChangePasswordDialog(onDismiss = { showChangePasswordDialog = false }, currentUser = state.currentUser!!)
     }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    Surface(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             Text("Email: ${state.currentUser?.email ?: "Not logged in"}",
                 style = MaterialTheme.typography.bodyLarge,
@@ -229,7 +253,10 @@ fun AccountSettingsScreen(viewModel: SettingsViewModel, onLogout: () -> Unit) {
             ActionButton(
                 text = "Logout",
                 color = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                onClick = onLogout
+                onClick = {
+                    viewModel.logout()
+                    onLogout()
+                }
             )
         }
     }
@@ -240,7 +267,10 @@ fun AccountSettingsScreen(viewModel: SettingsViewModel, onLogout: () -> Unit) {
 /* ------------------------- */
 
 @Composable
-fun SecuritySettingsScreen(viewModel: SettingsViewModel) {
+fun SecuritySettingsScreen(
+    viewModel: SettingsViewModel,
+    modifier: Modifier = Modifier
+) {
     SettingsToastObserver(viewModel)
     val state by viewModel.settingsState.collectAsState()
     val context = LocalContext.current
@@ -259,7 +289,7 @@ fun SecuritySettingsScreen(viewModel: SettingsViewModel) {
         )
     }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    Surface(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             if (state.isMpinSet) {
                 ActionButton("Change MPIN") { mpinDialogMode = MpinMode.CHANGE; showMpinDialog = true }
@@ -300,16 +330,23 @@ fun SecuritySettingsScreen(viewModel: SettingsViewModel) {
 /* ------------------------- */
 
 @Composable
-fun DataSettingsScreen(viewModel: SettingsViewModel) {
+fun DataSettingsScreen(
+    viewModel: SettingsViewModel,
+    modifier: Modifier = Modifier
+) {
     SettingsToastObserver(viewModel)
     val state by viewModel.settingsState.collectAsState()
-    var alertRetention by remember { mutableFloatStateOf(90f) }
-    var chatRetention by remember { mutableFloatStateOf(365f) }
+    
+    // Alert Retention
+    var alertRetention by remember(state.alertRetentionDays) { mutableFloatStateOf(state.alertRetentionDays.toFloat()) }
+    // Chat Retention
+    var chatRetention by remember(state.chatRetentionDays) { mutableFloatStateOf(state.chatRetentionDays.toFloat()) }
     
     // Footage Lifecycle
-    var compressionDelay by remember { mutableFloatStateOf(7f) }
+    var compressionDelay by remember(state.compressionDelayDays) { mutableFloatStateOf(state.compressionDelayDays.toFloat()) }
+    var archiveRetention by remember(state.archiveRetentionDays) { mutableFloatStateOf(state.archiveRetentionDays.toFloat()) }
+    
     var archivePeriod by remember { mutableStateOf("Weekly") }
-    var archiveRetention by remember { mutableFloatStateOf(180f) }
     val periodOptions = listOf("Daily", "Weekly", "Monthly")
     
     val context = LocalContext.current
@@ -325,17 +362,17 @@ fun DataSettingsScreen(viewModel: SettingsViewModel) {
         }
     }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    Surface(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
             SwitchSetting(
                 title = "Save Alerts Locally",
                 checked = state.saveAlertsLocally,
-                onCheckedChange = { viewModel.updateAlertPreference(PreferenceManager.SAVE_ALERTS_LOCALLY, it) }
+                onCheckedChange = { viewModel.updateAlertPreference("SAVE_ALERTS_LOCALLY", it) }
             )
             SwitchSetting(
                 title = "Save Chats Locally",
                 checked = state.saveChatsLocally,
-                onCheckedChange = { viewModel.updateAlertPreference(PreferenceManager.SAVE_CHATS_LOCALLY, it) }
+                onCheckedChange = { viewModel.updateAlertPreference("SAVE_CHATS_LOCALLY", it) }
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
@@ -348,7 +385,7 @@ fun DataSettingsScreen(viewModel: SettingsViewModel) {
                 value = alertRetention,
                 valueRange = 7f..365f,
                 onValueChange = { alertRetention = it },
-                onValueChangeFinished = {},
+                onValueChangeFinished = { viewModel.saveAlertRetentionDays(alertRetention.roundToInt()) },
                 displayValue = { "${it.roundToInt()} days" }
             )
             Row {
@@ -364,7 +401,7 @@ fun DataSettingsScreen(viewModel: SettingsViewModel) {
                 value = chatRetention,
                 valueRange = 30f..730f,
                 onValueChange = { chatRetention = it },
-                onValueChangeFinished = {},
+                onValueChangeFinished = { viewModel.saveChatRetentionDays(chatRetention.roundToInt()) },
                 displayValue = { "${it.roundToInt()} days" }
             )
             Row {
@@ -399,7 +436,7 @@ fun DataSettingsScreen(viewModel: SettingsViewModel) {
                 value = compressionDelay,
                 valueRange = 1f..30f,
                 onValueChange = { compressionDelay = it },
-                onValueChangeFinished = {},
+                onValueChangeFinished = { viewModel.saveCompressionDelayDays(compressionDelay.roundToInt()) },
                 displayValue = { "${it.roundToInt()} days" }
             )
             
@@ -415,7 +452,7 @@ fun DataSettingsScreen(viewModel: SettingsViewModel) {
                 value = archiveRetention,
                 valueRange = 30f..730f,
                 onValueChange = { archiveRetention = it },
-                onValueChangeFinished = {},
+                onValueChangeFinished = { viewModel.saveArchiveRetentionDays(archiveRetention.roundToInt()) },
                 displayValue = { "${it.roundToInt()} days" }
             )
             
@@ -443,50 +480,214 @@ fun DataSettingsScreen(viewModel: SettingsViewModel) {
 /* ------------------------- */
 
 @Composable
-fun AiSettingsScreen(viewModel: SettingsViewModel) {
+fun AiSettingsScreen(
+    viewModel: SettingsViewModel,
+    modifier: Modifier = Modifier
+) {
     SettingsToastObserver(viewModel)
     val state by viewModel.settingsState.collectAsState()
     val isDownloading by viewModel.isModelDownloading.collectAsState()
     val progress by viewModel.downloadProgress.collectAsState()
+    var showImportDialog by remember { mutableStateOf(false) }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    val modelFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.importModel(uri, state.aiModelFilename.ifBlank { "imported_model.task" })
+        }
+    }
+
+    if (showImportDialog) {
+        ImportConfigDialog(
+            onDismiss = { showImportDialog = false },
+            onImport = { json ->
+                viewModel.importModelSettings(json)
+                showImportDialog = false
+            }
+        )
+    }
+
+    Surface(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+            Text("General AI Settings", style = MaterialTheme.typography.titleMedium)
             SwitchSetting(
                 title = "Enable AI Chatbot",
                 checked = state.useChatbot,
-                onCheckedChange = { viewModel.updateAlertPreference(PreferenceManager.USE_CHATBOT, it) }
+                onCheckedChange = { viewModel.updateAlertPreference("USE_CHATBOT", it) }
             )
             
-            Spacer(modifier = Modifier.height(16.dp))
+            SwitchSetting(
+                title = "Enable Programmatic Fallback",
+                checked = state.useProgrammaticFallback,
+                onCheckedChange = { viewModel.updateAlertPreference("USE_PROGRAMMATIC_FALLBACK", it) }
+            )
 
-            if (state.isModelDownloaded) {
-                Text("Model Status: Downloaded", color = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(8.dp))
-                ActionButton(
-                    text = "Delete AI Model",
-                    color = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    onClick = { viewModel.deleteModel() }
-                )
+            SwitchSetting(
+                title = "Use AI Constraints (Experimental)",
+                checked = state.useAiConstraints,
+                onCheckedChange = { viewModel.updateAlertPreference("USE_AI_CONSTRAINTS", it) }
+            )
+            
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+            // LLM Configuration
+            Text("LLM Hyperparameters", style = MaterialTheme.typography.titleMedium)
+            
+            var tokensValue by remember(state.aiMaxTokens) { mutableFloatStateOf(state.aiMaxTokens.toFloat()) }
+            SliderSetting(
+                title = "Max Tokens",
+                value = tokensValue,
+                valueRange = 512f..8192f,
+                onValueChange = { tokensValue = it },
+                onValueChangeFinished = { viewModel.updateAiMaxTokens(tokensValue.roundToInt()) },
+                displayValue = { "${it.roundToInt()}" }
+            )
+
+            var topKValue by remember(state.aiTopK) { mutableFloatStateOf(state.aiTopK.toFloat()) }
+            SliderSetting(
+                title = "Top K",
+                value = topKValue,
+                valueRange = 1f..100f,
+                onValueChange = { topKValue = it },
+                onValueChangeFinished = { viewModel.updateAiTopK(topKValue.roundToInt()) }
+            )
+
+            var topPValue by remember(state.aiTopP) { mutableFloatStateOf(state.aiTopP) }
+            SliderSetting(
+                title = "Top P",
+                value = topPValue,
+                valueRange = 0f..1f,
+                onValueChange = { topPValue = it },
+                onValueChangeFinished = { viewModel.updateAiTopP(topPValue) },
+                displayValue = { "%.2f".format(it) }
+            )
+
+            var tempValue by remember(state.aiTemperature) { mutableFloatStateOf(state.aiTemperature) }
+            SliderSetting(
+                title = "Temperature",
+                value = tempValue,
+                valueRange = 0f..2f,
+                onValueChange = { tempValue = it },
+                onValueChangeFinished = { viewModel.updateAiTemperature(tempValue) },
+                displayValue = { "%.2f".format(it) }
+            )
+
+            DropdownSetting(
+                title = "Inference Backend",
+                options = listOf("CPU", "GPU"),
+                selectedOption = state.aiBackend,
+                onOptionSelected = { viewModel.updateAiBackend(it) }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+            Text("Downloaded Models", style = MaterialTheme.typography.titleMedium)
+            if (state.downloadedModels.isEmpty()) {
+                Text("No models downloaded yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                LabeledTextField(state.aiModelFilename, "Target Filename", onValueChange = { viewModel.updateAiModelFilename(it) })
-                ActionButton("Set Filename", modifier = Modifier.padding(top = 4.dp), onClick = { viewModel.saveModelName() })
-                Spacer(Modifier.height(8.dp))
-                LabeledTextField(state.aiModelUrl, "Model Download URL", keyboardType = KeyboardType.Uri, onValueChange = { viewModel.updateAiModelUrl(it) })
-                ActionButton("Save URL", modifier = Modifier.padding(top = 4.dp), onClick = { viewModel.saveAiModelUrl() })
-                
-                Spacer(Modifier.height(16.dp))
-                if (isDownloading) {
-                    androidx.compose.material3.LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.fillMaxWidth(),
+                state.downloadedModels.forEach { modelName ->
+                    ModelRow(
+                        name = modelName,
+                        isActive = modelName == state.aiModelFilename,
+                        onActivate = { viewModel.switchActiveModel(modelName) },
+                        onDelete = { viewModel.deleteModel(modelName) }
                     )
-                    Text("Downloading... ${(progress * 100).toInt()}%", modifier = Modifier.align(Alignment.CenterHorizontally))
-                } else {
-                    ActionButton("Download Model") { viewModel.downloadModel() }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text("Add/Import Model", style = MaterialTheme.typography.titleMedium)
+            LabeledTextField(state.aiModelFilename, "Model Filename (.task / .litertlm)", onValueChange = { viewModel.updateAiModelFilename(it) })
+            Spacer(Modifier.height(8.dp))
+            
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    onClick = { modelFilePicker.launch(arrayOf("*/*")) }
+                ) {
+                    Icon(Icons.Default.FileOpen, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Import .task")
+                }
+                
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    onClick = { showImportDialog = true }
+                ) {
+                    Text("Import JSON Config")
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text("Remote Download", style = MaterialTheme.typography.titleMedium)
+            LabeledTextField(state.aiModelUrl, "Download URL", keyboardType = KeyboardType.Uri, onValueChange = { viewModel.updateAiModelUrl(it) })
+            
+            Spacer(Modifier.height(16.dp))
+            if (isDownloading) {
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("Downloading... ${(progress * 100).toInt()}%", modifier = Modifier.align(Alignment.CenterHorizontally))
+            } else {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(modifier = Modifier.weight(1f), onClick = { viewModel.saveAiModelUrl(); viewModel.saveModelName() }) { Text("Save Config") }
+                    Button(modifier = Modifier.weight(1f), onClick = { viewModel.downloadModel() }) { Text("Download") }
                 }
             }
         }
     }
+}
+
+@Composable
+fun ImportConfigDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) {
+    var jsonText by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Import AI Config") },
+        text = {
+            Column {
+                Text("Paste model JSON configuration here.", style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(8.dp))
+                TextField(
+                    value = jsonText,
+                    onValueChange = { jsonText = it },
+                    modifier = Modifier.fillMaxWidth().height(150.dp),
+                    placeholder = { Text("{\"model_url\": \"...\", \"model_name\": \"...\"}") }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onImport(jsonText) }) { Text("Import") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun ModelRow(
+    name: String,
+    isActive: Boolean,
+    modifier: Modifier = Modifier,
+    onActivate: () -> Unit,
+    onDelete: () -> Unit
+) {
+    ListItem(
+        headlineContent = { Text(name, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal) },
+        supportingContent = { if (isActive) Text("Active", color = MaterialTheme.colorScheme.primary) },
+        leadingContent = { 
+            RadioButton(selected = isActive, onClick = onActivate)
+        },
+        trailingContent = {
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+            }
+        },
+        modifier = modifier.clickable { onActivate() }
+    )
 }
 
 /* ------------------------- */
@@ -494,11 +695,14 @@ fun AiSettingsScreen(viewModel: SettingsViewModel) {
 /* ------------------------- */
 
 @Composable
-fun GeneralSettingsScreen(viewModel: SettingsViewModel) {
+fun GeneralSettingsScreen(
+    viewModel: SettingsViewModel,
+    modifier: Modifier = Modifier
+) {
     SettingsToastObserver(viewModel)
     val state by viewModel.settingsState.collectAsState()
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    Surface(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
             LabeledTextField(
                 value = state.emergencyContact,
@@ -513,12 +717,22 @@ fun GeneralSettingsScreen(viewModel: SettingsViewModel) {
             Spacer(Modifier.height(24.dp))
 
             LabeledTextField(
-                value = state.streamUrl,
-                label = "Camera Stream URL (ws://...)",
+                value = state.serverUrl,
+                label = "Server URL (http/https)",
                 keyboardType = KeyboardType.Uri,
-                onValueChange = { viewModel.updateStreamUrl(it) }
+                onValueChange = { viewModel.updateServerUrl(it) }
             )
-            ActionButton("Save Stream URL", modifier = Modifier.padding(top = 8.dp), onClick = { viewModel.saveStreamUrl() })
+            
+            if (state.streamUrl.isNotBlank()) {
+                Text(
+                    text = "Extracted Stream URL: ${state.streamUrl}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                )
+            }
+            
+            ActionButton("Save Server URL", modifier = Modifier.padding(top = 8.dp), onClick = { viewModel.saveServerUrl() })
         }
     }
 }
@@ -528,7 +742,10 @@ fun GeneralSettingsScreen(viewModel: SettingsViewModel) {
 /* ------------------------- */
 
 @Composable
-fun NotificationSettingsScreen(viewModel: SettingsViewModel) {
+fun NotificationSettingsScreen(
+    viewModel: SettingsViewModel,
+    modifier: Modifier = Modifier
+) {
     SettingsToastObserver(viewModel)
     val state by viewModel.settingsState.collectAsState()
     val context = LocalContext.current
@@ -556,22 +773,22 @@ fun NotificationSettingsScreen(viewModel: SettingsViewModel) {
         }
     }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    Surface(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
             Text("Alert Toggles", style = MaterialTheme.typography.titleMedium)
             
-            SwitchSetting("Intruder Alerts", state.intruderAlert) { viewModel.updateAlertPreference(PreferenceManager.ALERT_INTRUDER, it) }
-            SwitchSetting("Face Recognition", state.faceRecognitionAlert) { viewModel.updateAlertPreference(PreferenceManager.ALERT_FACE_RECOGNITION, it) }
-            SwitchSetting("Mask Detection", state.maskDetectionAlert) { viewModel.updateAlertPreference(PreferenceManager.ALERT_MASK_DETECTION, it) }
-            SwitchSetting("Unknown Face", state.unknownFaceAlert) { viewModel.updateAlertPreference(PreferenceManager.ALERT_UNKNOWN_FACE, it) }
-            SwitchSetting("Weapon Detection", state.weaponAlert) { viewModel.updateAlertPreference(PreferenceManager.ALERT_WEAPON, it) }
-            SwitchSetting("Scream Detection", state.screamAlert) { viewModel.updateAlertPreference(PreferenceManager.ALERT_SCREAM, it) }
+            SwitchSetting("Known Face Alerts", state.knownFaceAlert) { viewModel.updateAlertPreference("ALERT_KNOWN_FACE", it) }
+            SwitchSetting("Face Recognition", state.faceRecognitionAlert) { viewModel.updateAlertPreference("ALERT_FACE_RECOGNITION", it) }
+            SwitchSetting("Mask Detection", state.maskDetectionAlert) { viewModel.updateAlertPreference("ALERT_MASK_DETECTION", it) }
+            SwitchSetting("Unknown Face", state.unknownFaceAlert) { viewModel.updateAlertPreference("ALERT_UNKNOWN_FACE", it) }
+            SwitchSetting("Weapon Detection", state.weaponAlert) { viewModel.updateAlertPreference("ALERT_WEAPON", it) }
+            SwitchSetting("Scream Detection", state.screamAlert) { viewModel.updateAlertPreference("ALERT_SCREAM", it) }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
             
             Text("Notification Sounds", style = MaterialTheme.typography.titleMedium)
             SoundSelectionRow("Critical Alerts (Weapon)", state.criticalSoundName) { activePriority = "CRITICAL"; soundPicker.launch("audio/*") }
-            SoundSelectionRow("High Priority (Intruder)", state.highSoundName) { activePriority = "HIGH"; soundPicker.launch("audio/*") }
+            SoundSelectionRow("High Priority (Recognized)", state.highSoundName) { activePriority = "HIGH"; soundPicker.launch("audio/*") }
             SoundSelectionRow("Medium Priority (Unknown Face)", state.mediumSoundName) { activePriority = "MEDIUM"; soundPicker.launch("audio/*") }
             SoundSelectionRow("Low Priority (Others)", state.lowSoundName) { activePriority = "LOW"; soundPicker.launch("audio/*") }
         }
@@ -583,7 +800,10 @@ fun NotificationSettingsScreen(viewModel: SettingsViewModel) {
 /* ------------------------- */
 
 @Composable
-fun PanicSettingsScreen(viewModel: SettingsViewModel) {
+fun PanicSettingsScreen(
+    viewModel: SettingsViewModel,
+    modifier: Modifier = Modifier
+) {
     SettingsToastObserver(viewModel)
     val state by viewModel.settingsState.collectAsState()
     
@@ -592,7 +812,7 @@ fun PanicSettingsScreen(viewModel: SettingsViewModel) {
         mutableFloatStateOf((state.panicTimerStr.toIntOrNull() ?: 5).toFloat()) 
     }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    Surface(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
             Text("Panic Button Configuration", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 16.dp))
             

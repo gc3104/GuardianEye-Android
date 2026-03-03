@@ -1,20 +1,29 @@
 package com.example.guardianeye.ui.auth.authcheck
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class AuthViewModel(application: Application) : AndroidViewModel(application) {
-    private val mpinStorage = MpinStorage(application)
+@HiltViewModel
+class AuthViewModel @Inject constructor(
+    private val mpinStorage: MpinStorage
+) : ViewModel() {
     private val auth = FirebaseAuth.getInstance()
 
-    private val _authState = MutableStateFlow<AuthState>(AuthState.CHECKING)
+    private val _authState = MutableStateFlow(AuthState.CHECKING)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
+
+    private val _errorEvent = MutableSharedFlow<String>()
+    val errorEvent: SharedFlow<String> = _errorEvent.asSharedFlow()
 
     fun checkAuthStatus() {
         viewModelScope.launch {
@@ -32,25 +41,25 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
-    fun verifyMpin(mpin: String): Boolean {
-        val correct = mpinStorage.verifyMpin(mpin)
-        if (correct) {
-            _authState.value = AuthState.AUTHENTICATED
+    fun verifyMpin(mpin: String) {
+        viewModelScope.launch {
+            if (mpinStorage.verifyMpin(mpin)) {
+                _authState.value = AuthState.AUTHENTICATED
+            } else {
+                _errorEvent.emit("Incorrect MPIN")
+            }
         }
-        return correct
     }
     
     fun setMpin(mpin: String) {
-        mpinStorage.saveMpin(mpin)
-        _authState.value = AuthState.AUTHENTICATED
+        viewModelScope.launch {
+            mpinStorage.saveMpin(mpin)
+            _authState.value = AuthState.AUTHENTICATED
+        }
     }
     
     fun onBiometricSuccess() {
         _authState.value = AuthState.AUTHENTICATED
-    }
-    
-    fun onLoginSuccess() {
-        checkAuthStatus()
     }
 }
 

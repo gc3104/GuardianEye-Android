@@ -32,7 +32,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.guardianeye.ui.theme.GuardianEyeTheme
 import kotlinx.coroutines.delay
 
 @Composable
@@ -42,17 +44,12 @@ fun PanicOverlay(
     timerSeconds: Int,
     onTimerFinished: () -> Unit
 ) {
-    // We wrap AnimatedVisibility in a condition to ensure it doesn't exist in the layout
-    // when not needed, although AnimatedVisibility usually handles this.
-    // However, we MUST remove the fillMaxSize modifier from AnimatedVisibility itself
-    // to prevent it from intercepting touches when "invisible" but still present in the tree.
-    
     AnimatedVisibility(
         visible = showOverlay,
         enter = fadeIn(),
         exit = fadeOut()
     ) {
-        var remainingTime by remember(showOverlay) { mutableStateOf(timerSeconds) }
+        var remainingTime by remember(showOverlay) { androidx.compose.runtime.mutableIntStateOf(timerSeconds) }
         
         LaunchedEffect(showOverlay) {
             if (showOverlay) {
@@ -65,64 +62,88 @@ fun PanicOverlay(
             }
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.8f))
-                // This clickable consumes all touches to prevent them from reaching the background
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = { /* Consuming click */ }
-                ), 
-            contentAlignment = Alignment.Center
+        PanicOverlayContent(
+            remainingTime = remainingTime,
+            timerSeconds = timerSeconds,
+            onCancelClick = onCancelClick
+        )
+    }
+}
+
+@Composable
+private fun PanicOverlayContent(
+    remainingTime: Int,
+    timerSeconds: Int,
+    onCancelClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.8f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { /* Consuming click */ }
+            ), 
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(16.dp)
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = "Sending Emergency Alert in",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = Color.White
+            Text(
+                text = "Sending Emergency Alert in",
+                style = MaterialTheme.typography.headlineSmall,
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Box(contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(
+                    progress = { if (timerSeconds > 0) remainingTime.toFloat() / timerSeconds.toFloat() else 0f },
+                    modifier = Modifier.size(120.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    strokeWidth = 8.dp,
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Box(contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(
-                        progress = { if (timerSeconds > 0) remainingTime.toFloat() / timerSeconds.toFloat() else 0f },
-                        modifier = Modifier.size(120.dp),
-                        color = MaterialTheme.colorScheme.error,
-                        strokeWidth = 8.dp,
-                    )
-                    Text(
-                        text = "$remainingTime",
-                        style = MaterialTheme.typography.displayMedium,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                Text(
+                    text = "$remainingTime",
+                    style = MaterialTheme.typography.displayMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            }
 
-                Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
-                Button(
-                    onClick = onCancelClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                    modifier = Modifier.height(56.dp)
-                ) {
-                    Icon(
-                        Icons.Filled.Close,
-                        contentDescription = null,
-                        tint = Color.Black
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "CANCEL",
-                        color = Color.Black,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
+            Button(
+                onClick = onCancelClick,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                modifier = Modifier.height(56.dp)
+            ) {
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = null,
+                    tint = Color.Black
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "CANCEL",
+                    color = Color.Black,
+                    style = MaterialTheme.typography.titleMedium
+                )
             }
         }
+    }
+}
+
+@Preview
+@Composable
+fun PanicOverlayPreview() {
+    GuardianEyeTheme {
+        PanicOverlayContent(
+            remainingTime = 3,
+            timerSeconds = 5,
+            onCancelClick = {}
+        )
     }
 }

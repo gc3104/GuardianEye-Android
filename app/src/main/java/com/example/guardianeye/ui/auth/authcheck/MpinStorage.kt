@@ -9,11 +9,11 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.google.crypto.tink.Aead
 import com.google.crypto.tink.KeyTemplates
+import com.google.crypto.tink.RegistryConfiguration
 import com.google.crypto.tink.aead.AeadConfig
 import com.google.crypto.tink.integration.android.AndroidKeysetManager
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.runBlocking
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "mpin_store")
 
@@ -32,48 +32,40 @@ class MpinStorage(context: Context) {
             .build()
             .keysetHandle
             
-        aead = keysetHandle.getPrimitive(Aead::class.java)
+        aead = keysetHandle.getPrimitive(RegistryConfiguration.get(), Aead::class.java)
     }
 
-    fun saveMpin(pin: String) {
+    suspend fun saveMpin(pin: String) {
         val encryptedPin = aead.encrypt(pin.toByteArray(), null)
         val encodedPin = Base64.encodeToString(encryptedPin, Base64.DEFAULT)
-        runBlocking {
-            dataStore.edit { preferences ->
-                preferences[MPIN_KEY] = encodedPin
-            }
+        dataStore.edit { preferences ->
+            preferences[MPIN_KEY] = encodedPin
         }
     }
 
-    fun verifyMpin(pin: String): Boolean {
-        val storedPinEncrypted = runBlocking {
-            dataStore.data.map { preferences ->
-                preferences[MPIN_KEY]
-            }.first()
-        } ?: return false
+    suspend fun verifyMpin(pin: String): Boolean {
+        val storedPinEncrypted = dataStore.data.map { preferences ->
+            preferences[MPIN_KEY]
+        }.first() ?: return false
 
         return try {
             val decodedPin = Base64.decode(storedPinEncrypted, Base64.DEFAULT)
             val decryptedPin = String(aead.decrypt(decodedPin, null))
             decryptedPin == pin
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
 
-    fun hasMpin(): Boolean {
-        return runBlocking {
-            dataStore.data.map { preferences ->
-                preferences.contains(MPIN_KEY)
-            }.first()
-        }
+    suspend fun hasMpin(): Boolean {
+        return dataStore.data.map { preferences ->
+            preferences.contains(MPIN_KEY)
+        }.first()
     }
 
-    fun deleteMpin() {
-        runBlocking {
-            dataStore.edit { preferences ->
-                preferences.remove(MPIN_KEY)
-            }
+    suspend fun deleteMpin() {
+        dataStore.edit { preferences ->
+            preferences.remove(MPIN_KEY)
         }
     }
 

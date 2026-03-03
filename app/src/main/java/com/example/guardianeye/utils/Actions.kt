@@ -6,6 +6,8 @@ import android.telephony.SmsManager
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 fun sendSms(context: Context, phoneNumber: String, message: String) {
     try {
@@ -32,4 +34,18 @@ fun makeCall(context: Context, phoneNumber: String) {
         e.printStackTrace()
         Toast.makeText(context, "Failed to place call.", Toast.LENGTH_SHORT).show()
     }
+}
+
+suspend fun getEmergencyContactOrShowToast(
+    context: Context,
+    preferenceManager: PreferenceManager
+): String? {
+    val contact = preferenceManager.getEmergencyContact()
+    if (contact.isNullOrEmpty()) {
+        withContext(Dispatchers.Main) {
+            Toast.makeText(context, "No emergency contact set!", Toast.LENGTH_SHORT).show()
+        }
+        return null
+    }
+    return contact
 }

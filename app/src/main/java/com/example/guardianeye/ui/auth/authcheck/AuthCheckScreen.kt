@@ -37,14 +37,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.guardianeye.ui.theme.GuardianEyeTheme
 
 @Composable
 fun AuthCheckScreen(
-    viewModel: AuthViewModel = viewModel(),
+    viewModel: AuthViewModel = hiltViewModel(),
     onAuthSuccess: () -> Unit,
     onNotLoggedIn: () -> Unit
 ) {
@@ -52,21 +54,24 @@ fun AuthCheckScreen(
     val context = LocalContext.current
     val activity = context as? FragmentActivity
 
-    // 1. Start the authentication check as soon as the screen is displayed.
     LaunchedEffect(Unit) {
         viewModel.checkAuthStatus()
     }
 
-    // 2. React to auth state changes for navigation.
     LaunchedEffect(authState) {
         when (authState) {
             AuthState.AUTHENTICATED -> onAuthSuccess()
             AuthState.NOT_LOGGED_IN -> onNotLoggedIn()
-            else -> { /* UI will handle other states */ }
+            else -> {}
         }
     }
 
-    // 3. Set up the biometric prompt.
+    LaunchedEffect(Unit) {
+        viewModel.errorEvent.collect { error ->
+            Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     val biometricPrompt = remember {
         if (activity == null) null
         else {
@@ -75,13 +80,7 @@ fun AuthCheckScreen(
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     viewModel.onBiometricSuccess()
                 }
-
-                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    // This is crucial. It handles user cancellation (e.g., pressing "Use MPIN").
-                    // We don't need to do anything here except let the prompt dismiss,
-                    // revealing the MPIN entry screen that is already composed.
-                }
-
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {}
                 override fun onAuthenticationFailed() {
                     Toast.makeText(context, "Authentication failed", Toast.LENGTH_SHORT).show()
                 }
@@ -102,7 +101,6 @@ fun AuthCheckScreen(
         }
     }
 
-    // 4. Display the correct UI based on the auth state.
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when (authState) {
             AuthState.CHECKING -> {
@@ -110,29 +108,18 @@ fun AuthCheckScreen(
                     CircularProgressIndicator()
                 }
             }
-
             AuthState.MPIN_REQUIRED -> {
-                // Attempt biometric auth automatically when MPIN is required.
                 LaunchedEffect(Unit) { triggerBiometric() }
                 MpinEntryScreen(
                     onMpinEntered = { mpin ->
-                        if (!viewModel.verifyMpin(mpin)) {
-                            Toast.makeText(context, "Incorrect MPIN", Toast.LENGTH_SHORT).show()
-                        }
+                        viewModel.verifyMpin(mpin)
                     },
                     onBiometricRequest = { triggerBiometric() }
                 )
             }
-
             AuthState.SET_MPIN_REQUIRED -> {
-                SetMpinScreen(
-                    onMpinSet = { mpin ->
-                        viewModel.setMpin(mpin)
-                    }
-                )
+                SetMpinScreen(onMpinSet = { mpin -> viewModel.setMpin(mpin) })
             }
-
-            // AUTHENTICATED and NOT_LOGGED_IN are handled by the LaunchedEffect, no UI needed.
             else -> {}
         }
     }
@@ -152,13 +139,12 @@ private fun MpinEntryScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Header
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(top = 48.dp)
         ) {
             Icon(
-                imageVector = Icons.Default.Fingerprint, // Or App Logo
+                imageVector = Icons.Default.Fingerprint,
                 contentDescription = "Logo",
                 modifier = Modifier.size(64.dp),
                 tint = MaterialTheme.colorScheme.primary
@@ -176,7 +162,6 @@ private fun MpinEntryScreen(
             )
         }
 
-        // MPIN Dots
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier.padding(vertical = 32.dp)
@@ -194,7 +179,6 @@ private fun MpinEntryScreen(
             }
         }
 
-        // Keypad
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -222,7 +206,7 @@ private fun MpinEntryScreen(
                                         mpin += key
                                         if (mpin.length == 4) {
                                             onMpinEntered(mpin)
-                                            mpin = "" // Clear after attempt
+                                            mpin = ""
                                         }
                                     }
                                 }
@@ -233,7 +217,6 @@ private fun MpinEntryScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
-
         Spacer(modifier = Modifier.height(16.dp))
     }
 }
@@ -244,7 +227,7 @@ private fun SetMpinScreen(
 ) {
     var mpin by remember { mutableStateOf("") }
     var confirmMpin by remember { mutableStateOf("") }
-    var step by remember { mutableIntStateOf(1) } // 1 for enter, 2 for confirm
+    var step by remember { mutableIntStateOf(1) }
     val context = LocalContext.current
 
     Column(
@@ -270,7 +253,6 @@ private fun SetMpinScreen(
             )
         }
 
-        // MPIN Dots
         val currentInput = if (step == 1) mpin else confirmMpin
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -289,7 +271,6 @@ private fun SetMpinScreen(
             }
         }
 
-        // Keypad
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -320,19 +301,16 @@ private fun SetMpinScreen(
                                     if (step == 1) {
                                         if (mpin.length < 4) {
                                             mpin += key
-                                            if (mpin.length == 4) {
-                                                step = 2 // Move to confirmation step
-                                            }
+                                            if (mpin.length == 4) step = 2
                                         }
-                                    } else { // step == 2
+                                    } else {
                                         if (confirmMpin.length < 4) {
                                             confirmMpin += key
                                             if (confirmMpin.length == 4) {
                                                 if (mpin == confirmMpin) {
-                                                    onMpinSet(mpin) // Success
+                                                    onMpinSet(mpin)
                                                 } else {
                                                     Toast.makeText(context, "PINs do not match. Try again.", Toast.LENGTH_SHORT).show()
-                                                    // Reset process
                                                     mpin = ""
                                                     confirmMpin = ""
                                                     step = 1
@@ -351,7 +329,6 @@ private fun SetMpinScreen(
         Spacer(modifier = Modifier.height(16.dp))
     }
 }
-
 
 @Composable
 fun KeyPadButton(key: String, onClick: () -> Unit) {
@@ -373,5 +350,21 @@ fun KeyPadButton(key: String, onClick: () -> Unit) {
                 fontWeight = FontWeight.SemiBold
             )
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MpinEntryScreenPreview() {
+    GuardianEyeTheme {
+        MpinEntryScreen(onMpinEntered = {}, onBiometricRequest = {})
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun SetMpinScreenPreview() {
+    GuardianEyeTheme {
+        SetMpinScreen(onMpinSet = {})
     }
 }

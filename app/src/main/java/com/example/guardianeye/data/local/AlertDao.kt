@@ -1,6 +1,7 @@
 package com.example.guardianeye.data.local
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -23,14 +24,11 @@ interface AlertDao {
     suspend fun updateAlert(alert: Alert)
 
     @Query("DELETE FROM alert")
-    suspend fun deleteAllAlerts()
+    suspend fun deleteAllAlerts(): Int
 
-    // Assuming timestamp in Alert is stored as a comparable format (e.g. Long seconds/millis in Room type converter)
-    // If it's a complex object, make sure TypeConverters are set up. 
-    // Usually Timestamp is converted to Long.
     @Query("DELETE FROM alert WHERE timestamp < :timestamp")
-    suspend fun deleteAlertsOlderThan(timestamp: Long)
+    suspend fun deleteAlertsOlderThan(timestamp: Long): Int
 
-    @Query("DELETE FROM alert WHERE id = :id")
-    suspend fun deleteAlert(id: String)
+    @Delete
+    suspend fun deleteAlert(alert: Alert)
 }

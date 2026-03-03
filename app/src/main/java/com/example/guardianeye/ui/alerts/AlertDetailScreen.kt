@@ -1,150 +1,161 @@
 package com.example.guardianeye.ui.alerts
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import coil.compose.rememberAsyncImagePainter
+import com.example.guardianeye.model.Alert
+import com.example.guardianeye.model.AlertPriority
+import com.example.guardianeye.model.AlertType
+import com.example.guardianeye.ui.components.VideoPlayer
+import com.example.guardianeye.ui.theme.GuardianEyeTheme
+
+sealed class AlertDetailIntent {
+    object NavigateToChat : AlertDetailIntent()
+    object ShareAlert : AlertDetailIntent()
+}
 
 @Composable
 fun AlertDetailScreen(
-    alertId: String?,
-    alertType: String?,
-    alertDesc: String?,
-    mediaUrl: String?,
-    mediaType: String?,
+    alert: Alert,
     onNavigateToChat: () -> Unit
 ) {
-    // Scaffold is provided at root level in GuardianEyeApp.kt
+    AlertDetailContent(
+        alert = alert,
+        onIntent = { intent ->
+            when (intent) {
+                AlertDetailIntent.NavigateToChat -> onNavigateToChat()
+                AlertDetailIntent.ShareAlert -> { /* Share Logic */ }
+            }
+        }
+    )
+}
+
+@Composable
+private fun AlertDetailContent(
+    alert: Alert,
+    onIntent: (AlertDetailIntent) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(24.dp)
     ) {
-        Text(
-            text = alertType?.replace("_", " ") ?: "Alert Detail",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        Text(
-            text = alertDesc ?: "No description provided.",
-            style = MaterialTheme.typography.bodyLarge
-        )
+        AlertHeader(alert)
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        if (!mediaUrl.isNullOrEmpty() && mediaUrl != "NONE") {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
-                when (mediaType) {
-                    "IMAGE" -> {
-                        Image(
-                            painter = rememberAsyncImagePainter(mediaUrl),
-                            contentDescription = "Alert Image",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(16f / 9f)
-                        )
-                    }
-                    "VIDEO", "AUDIO" -> {
-                        // ExoPlayer can handle both video and audio
-                        MediaPlayback(url = mediaUrl, modifier = Modifier.fillMaxWidth())
-                    }
-                    else -> {
-                        Text(
-                            text = "Unsupported media type: $mediaType",
-                            modifier = Modifier.padding(16.dp)
-                        )
-                    }
-                }
-            }
+        if (!alert.mediaUrl.isNullOrEmpty() && alert.mediaUrl != "NONE") {
+            MediaSection(alert)
         }
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.weight(1f))
         
-        Button(
-            onClick = onNavigateToChat,
-            modifier = Modifier.fillMaxWidth()
+        ActionButtons(onIntent)
+    }
+}
+
+@Composable
+private fun AlertHeader(alert: Alert) {
+    Column {
+        Text(
+            text = alert.type.name.replace("_", " "),
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(8.dp))
+        Surface(
+            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f),
+            shape = MaterialTheme.shapes.small
         ) {
-            Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null)
-            Spacer(modifier = Modifier.padding(4.dp))
-            Text("Chat about this Alert")
+            Text(
+                text = "Priority: ${alert.priority}",
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = alert.description.ifEmpty { "No detailed description available." },
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun MediaSection(alert: Alert) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        elevation = CardDefaults.cardElevation(8.dp)
+    ) {
+        when (alert.mediaType) {
+            "IMAGE" -> {
+                Image(
+                    painter = rememberAsyncImagePainter(alert.mediaUrl),
+                    contentDescription = "Alert Image",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                )
+            }
+            "VIDEO", "AUDIO" -> {
+                VideoPlayer(
+                    url = alert.mediaUrl!!, 
+                    modifier = Modifier.fillMaxWidth().aspectRatio(16f/9f), 
+                    isAudio = alert.mediaType == "AUDIO"
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun MediaPlayback(url: String, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(url))
-            prepare()
-            playWhenReady = true // Autoplay
+private fun ActionButtons(onIntent: (AlertDetailIntent) -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        OutlinedButton(
+            onClick = { onIntent(AlertDetailIntent.ShareAlert) },
+            modifier = Modifier.weight(1f).height(56.dp),
+            shape = MaterialTheme.shapes.large
+        ) {
+            Icon(Icons.Default.Share, null)
+            Spacer(Modifier.width(8.dp))
+            Text("Share")
+        }
+        Button(
+            onClick = { onIntent(AlertDetailIntent.NavigateToChat) },
+            modifier = Modifier.weight(1f).height(56.dp),
+            shape = MaterialTheme.shapes.large
+        ) {
+            Icon(Icons.AutoMirrored.Filled.Chat, null)
+            Spacer(Modifier.width(8.dp))
+            Text("Chat")
         }
     }
+}
 
-    DisposableEffect(Unit) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_PAUSE -> exoPlayer.pause()
-                Lifecycle.Event.ON_RESUME -> exoPlayer.play()
-                else -> {}
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            exoPlayer.release()
-        }
-    }
-
-    Box(modifier = modifier) {
-        AndroidView(
-            factory = {
-                PlayerView(it).apply {
-                    player = exoPlayer
-                    // For audio-only, the default controller is sufficient.
-                }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
+@Preview(showBackground = true)
+@Composable
+fun AlertDetailScreenPreview() {
+    GuardianEyeTheme {
+        AlertDetailContent(
+            alert = Alert(
+                type = AlertType.WEAPON,
+                priority = AlertPriority.CRITICAL,
+                description = "Automated detection of a firearm in the living room area."
+            ),
+            onIntent = {}
         )
     }
 }

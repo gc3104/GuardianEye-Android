@@ -77,36 +77,55 @@ class DownloadWorker(
 
                 val body = response.body
                 val contentLength = body.contentLength()
-                if (contentLength <= 0) {
-                     throw IOException("Invalid content length - download cannot proceed.")
-                }
+                
                 val inputStream = body.byteStream()
                 val outputStream = FileOutputStream(tempFile)
 
                 val buffer = ByteArray(8 * 1024)
                 var bytesRead: Int
                 var totalBytesRead = 0L
+                var lastProgressUpdate = 0L
+
+                // If content length is unknown (-1), we still download, but progress bar will be indeterminate
+                val isLengthKnown = contentLength > 0
+                if (!isLengthKnown) {
+                     notificationManager.notify(
+                        notificationId, 
+                        notificationBuilder.setProgress(0, 0, true)
+                            .setContentText("Downloading... (size unknown)")
+                            .build()
+                    )
+                }
 
                 while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                     outputStream.write(buffer, 0, bytesRead)
                     totalBytesRead += bytesRead
                     
-                    val progress = ((totalBytesRead * 100) / contentLength).toInt()
-                    if (totalBytesRead % (1024 * 512) == 0L || totalBytesRead == contentLength) { 
-                         notificationManager.notify(
-                            notificationId, 
-                            notificationBuilder.setProgress(100, progress, false)
-                                .setContentText("Downloading: $progress%")
-                                .build()
-                        )
-                        setProgress(workDataOf("progress" to progress))
+                    if (isLengthKnown) {
+                        val progress = ((totalBytesRead * 100) / contentLength).toInt()
+                        // Update progress roughly every 1% or every 512KB if needed
+                        if (progress > lastProgressUpdate || totalBytesRead == contentLength) {
+                             lastProgressUpdate = progress.toLong()
+                             notificationManager.notify(
+                                notificationId, 
+                                notificationBuilder.setProgress(100, progress, false)
+                                    .setContentText("Downloading: $progress%")
+                                    .build()
+                            )
+                            setProgress(workDataOf("progress" to progress))
+                        }
+                    } else {
+                        // Indeterminate progress update occasionally
+                         if (totalBytesRead % (1024 * 1024) == 0L) { // every 1MB
+                             setProgress(workDataOf("bytes_read" to totalBytesRead))
+                         }
                     }
                 }
                 outputStream.flush()
                 outputStream.close()
                 inputStream.close()
 
-                if (totalBytesRead != contentLength) {
+                if (isLengthKnown && totalBytesRead != contentLength) {
                     throw IOException("Download incomplete: expected $contentLength bytes but got $totalBytesRead")
                 }
             }

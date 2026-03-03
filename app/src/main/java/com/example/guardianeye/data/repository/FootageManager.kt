@@ -5,11 +5,16 @@ import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import com.example.guardianeye.utils.PreferenceManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -17,9 +22,67 @@ import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-class FootageManager(private val context: Context) {
+class FootageManager(private val context: Context, private val preferenceManager: PreferenceManager) {
 
     private val TAG = "FootageManager"
+    private val client = OkHttpClient()
+
+    /**
+     * Downloads footage from the server and saves it to the device.
+     * If a file with the same name exists, it overrides it only if the server version is larger.
+     */
+    suspend fun downloadAndSaveFootage(
+        serverFileUrl: String,
+        fileName: String,
+        destinationDirectoryUri: Uri
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val rootDir = DocumentFile.fromTreeUri(context, destinationDirectoryUri) ?: return@withContext false
+            val existingFile = rootDir.findFile(fileName)
+
+            // 1. Get metadata from server (Content-Length)
+            val request = Request.Builder().url(serverFileUrl).head().build()
+            val serverSize = client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext false
+                response.header("Content-Length")?.toLongOrNull() ?: -1L
+            }
+
+            // 2. Check override logic
+            if (existingFile != null) {
+                val localSize = existingFile.length()
+                if (serverSize != -1L && serverSize <= localSize) {
+                    Log.d(TAG, "Local file is same size or larger. Skipping download: $fileName")
+                    return@withContext true // Already have a good version
+                }
+                Log.d(TAG, "Server file is larger ($serverSize > $localSize). Overriding: $fileName")
+                existingFile.delete()
+            }
+
+            // 3. Download and Save
+            val downloadRequest = Request.Builder().url(serverFileUrl).build()
+            client.newCall(downloadRequest).execute().use { response ->
+                if (!response.isSuccessful) return@withContext false
+                val body = response.body ?: return@withContext false
+
+                val newFile = rootDir.createFile("video/mp4", fileName) ?: return@withContext false
+                context.contentResolver.openOutputStream(newFile.uri)?.use { outputStream ->
+                    body.byteStream().use { inputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                }
+                Log.d(TAG, "Successfully downloaded and saved: $fileName")
+                true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error downloading footage: $fileName", e)
+            false
+        }
+    }
+
+    suspend fun runManualLifecycle(compressionDays: Int, period: String, archiveRetention: Int) {
+        val directoryUriStr = preferenceManager.getFootageDirectory() ?: return
+        runLifecycle(directoryUriStr.toUri(), compressionDays, period, archiveRetention)
+    }
 
     /**
      * Executes the lifecycle policy:
@@ -94,17 +157,17 @@ class FootageManager(private val context: Context) {
         }
     }
 
-    suspend fun deleteAllFootage(directoryUri: Uri) {
-        withContext(Dispatchers.IO) {
-            val rootDir = DocumentFile.fromTreeUri(context, directoryUri) ?: return@withContext
-            rootDir.listFiles().forEach { file ->
-                try {
-                    if (file.name != ".nomedia") file.delete()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to delete file: ${file.name}", e)
-                }
+    suspend fun deleteAllFootage(): Boolean = withContext(Dispatchers.IO) {
+        val directoryUriStr = preferenceManager.getFootageDirectory() ?: return@withContext false
+        val rootDir = DocumentFile.fromTreeUri(context, directoryUriStr.toUri()) ?: return@withContext false
+        rootDir.listFiles().forEach { file ->
+            try {
+                if (file.name != ".nomedia") file.delete()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to delete file: ${file.name}", e)
             }
         }
+        true
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)

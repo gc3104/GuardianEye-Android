@@ -45,9 +45,9 @@ class AlertRepository(private val alertDao: AlertDao, private val preferenceMana
         }
     }
 
-    suspend fun deleteAlert(id: String) {
+    suspend fun deleteAlert(alert: Alert) {
         withContext(Dispatchers.IO) {
-            alertDao.deleteAlert(id)
+            alertDao.deleteAlert(alert)
         }
     }
 }

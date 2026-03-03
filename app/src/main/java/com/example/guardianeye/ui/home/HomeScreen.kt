@@ -4,12 +4,10 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -18,10 +16,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.PlayCircleOutline
@@ -32,6 +34,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,27 +42,38 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.rememberAsyncImagePainter
+import com.example.guardianeye.ui.theme.GuardianEyeTheme
 import com.example.guardianeye.webrtc.WebRtcClient
 import org.webrtc.EglBase
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoTrack
+
+sealed class HomeIntent {
+    object StartStream : HomeIntent()
+    object Disconnect : HomeIntent()
+    data class ToggleAudio(val enabled: Boolean) : HomeIntent()
+    data class ToggleRemoteAudio(val enabled: Boolean) : HomeIntent()
+    data class SetRemoteAudioVolume(val volume: Float) : HomeIntent()
+    object NavigateToFootage : HomeIntent()
+}
 
 @Composable
 fun HomeScreen(
@@ -67,24 +81,37 @@ fun HomeScreen(
     onNavigateToFootage: () -> Unit
 ) {
     val viewState by viewModel.viewState.collectAsState()
-    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Auto-connect when screen becomes active
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_START) {
-                viewModel.startStream()
-            } else if (event == Lifecycle.Event.ON_STOP) {
-                // Optional: Disconnect on stop to save battery, or keep running
-                // viewModel.disconnect() 
-            }
+            if (event == Lifecycle.Event.ON_START) viewModel.startStream()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    HomeContent(
+        state = viewState,
+        onIntent = { intent ->
+            when (intent) {
+                HomeIntent.StartStream -> viewModel.startStream()
+                HomeIntent.Disconnect -> viewModel.disconnect()
+                is HomeIntent.ToggleAudio -> viewModel.toggleAudio(intent.enabled)
+                is HomeIntent.ToggleRemoteAudio -> viewModel.toggleRemoteAudio(intent.enabled)
+                is HomeIntent.SetRemoteAudioVolume -> viewModel.setRemoteAudioVolume(intent.volume)
+                HomeIntent.NavigateToFootage -> onNavigateToFootage()
+            }
+        }
+    )
+}
+
+@Composable
+private fun HomeContent(
+    state: HomeViewState,
+    onIntent: (HomeIntent) -> Unit
+) {
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -95,128 +122,112 @@ fun HomeScreen(
     ) {
         Text(
             text = "Live Surveillance",
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(bottom = 16.dp)
+            style = MaterialTheme.typography.headlineLarge,
+            modifier = Modifier.padding(bottom = 24.dp)
         )
 
-        // Video Player Container
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp),
-            elevation = CardDefaults.cardElevation(4.dp),
-            shape = RoundedCornerShape(12.dp)
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.extraLarge,
+            colors = CardDefaults.cardColors(containerColor = Color.Black)
         ) {
             Column {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(16f / 9f)
-                        .background(Color.Black)
                 ) {
-                    if (viewState.videoTrack != null) {
-                        WebRtcVideoView(viewState.videoTrack!!, viewState.eglBaseContext)
+                    if (state.videoTrack != null) {
+                        WebRtcVideoView(state.videoTrack, state.eglBaseContext)
                     } else {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                if (viewState.connectionStatus == WebRtcClient.ConnectionStatus.CONNECTING) {
-                                    CircularProgressIndicator(color = Color.White)
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                }
-                                Text(
-                                    text = when (viewState.connectionStatus) {
-                                        WebRtcClient.ConnectionStatus.CONNECTING -> "Connecting..."
-                                        WebRtcClient.ConnectionStatus.DISCONNECTED -> "Disconnected"
-                                        WebRtcClient.ConnectionStatus.ERROR -> "Connection Failed"
-                                        else -> "Waiting for video..."
-                                    },
-                                    color = Color.White
-                                )
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            if (state.connectionStatus == WebRtcClient.ConnectionStatus.CONNECTING) {
+                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                            } else {
+                                Icon(Icons.Default.VideocamOff, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(48.dp))
                             }
                         }
                     }
                 }
                 
-                // Controls Row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Connect/Reconnect Button
-                    IconButton(onClick = { 
-                        if (viewState.connectionStatus == WebRtcClient.ConnectionStatus.CONNECTED) {
-                             viewModel.disconnect()
-                        } else {
-                             viewModel.startStream()
-                        }
-                    }) {
-                        Icon(
-                            imageVector = if (viewState.connectionStatus == WebRtcClient.ConnectionStatus.CONNECTED) 
-                                Icons.Default.Videocam else Icons.Default.VideocamOff,
-                            contentDescription = if (viewState.connectionStatus == WebRtcClient.ConnectionStatus.CONNECTED) 
-                                "Disconnect" else "Connect",
-                            tint = if (viewState.connectionStatus == WebRtcClient.ConnectionStatus.CONNECTED) 
-                                MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                        )
-                    }
-
-                    // Push to Talk Button
-                    PushToTalkButton(viewModel)
-                }
+                StreamControls(state, onIntent)
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
-        // Recent Footage
+        FootageSection(state.recentFootage, onIntent)
+    }
+}
+
+@Composable
+private fun StreamControls(state: HomeViewState, onIntent: (HomeIntent) -> Unit) {
+    var showVolumeSlider by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.padding(16.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Recent Footage",
-                style = MaterialTheme.typography.titleLarge
-            )
-            TextButton(onClick = onNavigateToFootage) {
-                Text("View All")
+            val isConnected = state.connectionStatus == WebRtcClient.ConnectionStatus.CONNECTED
+            
+            FloatingActionButton(
+                onClick = { if (isConnected) onIntent(HomeIntent.Disconnect) else onIntent(HomeIntent.StartStream) },
+                containerColor = if (isConnected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
+            ) {
+                Icon(if (isConnected) Icons.Default.Videocam else Icons.Default.VideocamOff, null)
+            }
+
+            IconButton(
+                onClick = { onIntent(HomeIntent.ToggleRemoteAudio(!state.isRemoteAudioEnabled)) },
+                modifier = Modifier.size(56.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+            ) {
+                Icon(if (state.isRemoteAudioEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff, null)
+            }
+
+            Button(
+                onClick = { onIntent(HomeIntent.ToggleAudio(!state.isAudioTransmitting)) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (state.isAudioTransmitting) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
+                ),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.height(56.dp)
+            ) {
+                Icon(if (state.isAudioTransmitting) Icons.Default.Mic else Icons.Default.MicOff, null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (state.isAudioTransmitting) "LIVE" else "PUSH TO TALK")
             }
         }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        if (viewState.recentFootage.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(100.dp),
-                    contentAlignment = Alignment.Center
-            ) {
-                Text("No recent footage found")
-            }
-        } else {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(viewState.recentFootage) { uri ->
-                    FootageThumbnail(uri) {
-                        val intent = Intent(Intent.ACTION_VIEW)
-                        intent.setDataAndType(uri, "video/*")
-                        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        try {
-                            context.startActivity(intent)
-                        } catch (_: Exception) {
-                            // Handle error
-                        }
-                    }
+    }
+}
+
+@Composable
+private fun FootageSection(footage: List<Uri>, onIntent: (HomeIntent) -> Unit) {
+    val context = LocalContext.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Recent Footage", style = MaterialTheme.typography.titleLarge)
+        TextButton(onClick = { onIntent(HomeIntent.NavigateToFootage) }) {
+            Text("See all")
+        }
+    }
+    
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(vertical = 8.dp)
+    ) {
+        items(footage) { uri ->
+            FootageThumbnail(uri = uri) {
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "video/*")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
+                context.startActivity(intent)
             }
         }
     }
@@ -225,78 +236,48 @@ fun HomeScreen(
 @Composable
 fun WebRtcVideoView(videoTrack: VideoTrack, eglBaseContext: EglBase.Context?) {
     AndroidView(
-        factory = { ctx ->
-            SurfaceViewRenderer(ctx).apply {
+        factory = { context ->
+            SurfaceViewRenderer(context).apply {
                 init(eglBaseContext, null)
                 setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
-                setEnableHardwareScaler(true)
                 videoTrack.addSink(this)
             }
         },
-        modifier = Modifier.fillMaxSize(),
-        onRelease = { view ->
-            videoTrack.removeSink(view)
-            view.release()
-        }
+        modifier = Modifier.fillMaxSize()
     )
-}
-
-@Composable
-fun PushToTalkButton(viewModel: HomeViewModel) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    LaunchedEffect(isPressed) {
-        viewModel.toggleAudio(isPressed)
-    }
-
-    Button(
-        onClick = { /* interaction handled by interactionSource */ },
-        interactionSource = interactionSource,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (isPressed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-        )
-    ) {
-        Icon(
-            imageVector = if (isPressed) Icons.Default.Mic else Icons.Default.MicOff,
-            contentDescription = null,
-            modifier = Modifier.padding(end = 8.dp)
-        )
-        Text(if (isPressed) "Listening..." else "Hold to Talk")
-    }
 }
 
 @Composable
 fun FootageThumbnail(uri: Uri, onClick: () -> Unit) {
     Card(
-        modifier = Modifier
-            .size(160.dp, 100.dp)
-            .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(8.dp)
+        onClick = onClick,
+        modifier = Modifier.size(200.dp, 120.dp),
+        shape = MaterialTheme.shapes.medium
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+        Box {
             Image(
                 painter = rememberAsyncImagePainter(uri),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
-            
-            // Play icon overlay
             Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(16.dp)),
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.2f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.PlayCircleOutline,
-                    contentDescription = null,
-                    modifier = Modifier.size(32.dp),
-                    tint = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-                )
+                Icon(Icons.Default.PlayCircleOutline, null, tint = Color.White, modifier = Modifier.size(40.dp))
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun HomeScreenPreview() {
+    GuardianEyeTheme {
+        HomeContent(
+            state = HomeViewState(connectionStatus = WebRtcClient.ConnectionStatus.DISCONNECTED),
+            onIntent = {}
+        )
     }
 }

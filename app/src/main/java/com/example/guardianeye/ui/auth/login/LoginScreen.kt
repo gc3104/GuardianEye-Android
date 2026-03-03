@@ -27,18 +27,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.guardianeye.ui.theme.GuardianEyeTheme
 
 @Composable
 fun LoginScreen(
-    viewModel: LoginViewModel = viewModel(),
+    viewModel: LoginViewModel = hiltViewModel(),
     onLoginSuccess: () -> Unit,
     onNavigateToRegister: () -> Unit
 ) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    
     val isLoading by viewModel.isLoading.collectAsState()
     val loginError by viewModel.loginError.collectAsState()
     val resetMessage by viewModel.resetPasswordMessage.collectAsState()
@@ -58,6 +57,24 @@ fun LoginScreen(
             viewModel.clearMessage()
         }
     }
+
+    LoginContent(
+        isLoading = isLoading,
+        onLogin = { email, password -> viewModel.login(email, password, onLoginSuccess) },
+        onResetPassword = { email -> viewModel.resetPassword(email) },
+        onNavigateToRegister = onNavigateToRegister
+    )
+}
+
+@Composable
+private fun LoginContent(
+    isLoading: Boolean,
+    onLogin: (String, String) -> Unit,
+    onResetPassword: (String) -> Unit,
+    onNavigateToRegister: () -> Unit
+) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -96,9 +113,7 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         TextButton(
-            onClick = {
-                viewModel.resetPassword(email)
-            },
+            onClick = { onResetPassword(email) },
             modifier = Modifier.align(Alignment.End)
         ) {
             Text("Forgot Password?")
@@ -110,9 +125,7 @@ fun LoginScreen(
             CircularProgressIndicator()
         } else {
             Button(
-                onClick = {
-                    viewModel.login(email, password, onLoginSuccess)
-                },
+                onClick = { onLogin(email, password) },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Login")
@@ -126,5 +139,18 @@ fun LoginScreen(
         ) {
             Text("Don't have an account? Register")
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun LoginScreenPreview() {
+    GuardianEyeTheme {
+        LoginContent(
+            isLoading = false,
+            onLogin = { _, _ -> },
+            onResetPassword = {},
+            onNavigateToRegister = {}
+        )
     }
 }

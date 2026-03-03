@@ -8,7 +8,7 @@ import androidx.room.TypeConverters
 import com.example.guardianeye.model.Alert
 import com.example.guardianeye.model.ChatMessage
 
-@Database(entities = [Alert::class, ChatMessage::class], version = 2, exportSchema = false)
+@Database(entities = [Alert::class, ChatMessage::class], version = 1, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun alertDao(): AlertDao
@@ -25,7 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "guardian_eye_database"
                 )
-                    .fallbackToDestructiveMigration(false) // For simplicity in development, wipe DB on schema change
+                    .fallbackToDestructiveMigration(true)
                     .build()
                 INSTANCE = instance
                 instance

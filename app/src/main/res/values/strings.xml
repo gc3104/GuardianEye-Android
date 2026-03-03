@@ -1,6 +1,5 @@
 <resources>
     <string name="app_name">GuardianEye</string>
-    <string name="generic_hello_message">Hello! How can I help you today?</string>
 
     <!-- Settings Sections -->
 

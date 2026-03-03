@@ -27,19 +27,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.guardianeye.ui.theme.GuardianEyeTheme
 
 @Composable
 fun RegisterScreen(
-    viewModel: RegisterViewModel = viewModel(),
+    viewModel: RegisterViewModel = hiltViewModel(),
     onRegisterSuccess: () -> Unit,
     onNavigateToLogin: () -> Unit
 ) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
-    
     val isLoading by viewModel.isLoading.collectAsState()
     val registrationError by viewModel.registrationError.collectAsState()
     
@@ -51,6 +49,25 @@ fun RegisterScreen(
             viewModel.clearError()
         }
     }
+
+    RegisterContent(
+        isLoading = isLoading,
+        onRegister = { email, password, confirm -> 
+            viewModel.register(email, password, confirm, onRegisterSuccess) 
+        },
+        onNavigateToLogin = onNavigateToLogin
+    )
+}
+
+@Composable
+private fun RegisterContent(
+    isLoading: Boolean,
+    onRegister: (String, String, String) -> Unit,
+    onNavigateToLogin: () -> Unit
+) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -104,9 +121,7 @@ fun RegisterScreen(
             CircularProgressIndicator()
         } else {
             Button(
-                onClick = {
-                    viewModel.register(email, password, confirmPassword, onRegisterSuccess)
-                },
+                onClick = { onRegister(email, password, confirmPassword) },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Register")
@@ -120,5 +135,17 @@ fun RegisterScreen(
         ) {
             Text("Already have an account? Login")
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun RegisterScreenPreview() {
+    GuardianEyeTheme {
+        RegisterContent(
+            isLoading = false,
+            onRegister = { _, _, _ -> },
+            onNavigateToLogin = {}
+        )
     }
 }

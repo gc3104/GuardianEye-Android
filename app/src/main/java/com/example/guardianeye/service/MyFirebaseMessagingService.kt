@@ -1,183 +1,81 @@
 package com.example.guardianeye.service
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.Intent
-import android.media.AudioAttributes
-import android.media.RingtoneManager
-import android.os.Build
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import androidx.core.net.toUri
-import com.example.guardianeye.MainActivity
-import com.example.guardianeye.R
-import com.example.guardianeye.data.local.AppDatabase
-import com.example.guardianeye.data.repository.AlertRepository
-import com.example.guardianeye.model.Alert
-import com.example.guardianeye.model.AlertPriority
-import com.example.guardianeye.model.AlertType
-import com.example.guardianeye.utils.PreferenceManager
-import com.google.firebase.Timestamp
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkRequest
+import androidx.work.workDataOf
+import com.example.guardianeye.data.repository.FirebaseManager
+import com.example.guardianeye.worker.FetchAlertWorker
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import java.util.Locale
+import java.util.concurrent.TimeUnit
 
-@OptIn(DelicateCoroutinesApi::class)
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
-    override fun onMessageReceived(remoteMessage: RemoteMessage) {
-        val alertType = remoteMessage.data["type"] ?: "DEFAULT"
-        val id = remoteMessage.data["id"] ?: ""
-        val description = remoteMessage.data["description"] ?: ""
-        val mediaUrl = remoteMessage.data["mediaUrl"] ?: ""
-        val mediaType = remoteMessage.data["mediaType"] ?: ""
-        val priorityString = remoteMessage.data["priority"] ?: "MEDIUM"
+    companion object {
+        private const val TAG = "MyFirebaseMsgService"
+    }
 
-        // Save alert locally if enabled
-        saveAlert(id, alertType, description, mediaUrl, mediaType, priorityString)
-        
-        remoteMessage.notification?.let {
-            if (shouldShowNotification(alertType)) {
-                sendNotification(it.title ?: "Alert", it.body ?: "New Alert Detected", alertType, id, description, mediaUrl, mediaType, priorityString)
+    override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        Log.d(TAG, "From: ${remoteMessage.from}")
+
+        // Check if message contains data payload
+        if (remoteMessage.data.isNotEmpty()) {
+            Log.d(TAG, "Message data payload: ${remoteMessage.data}")
+            
+            // The message contains status and alertId. We need alertId to fetch the details.
+            val alertId = remoteMessage.data["alertId"] ?: remoteMessage.data["id"]
+            
+            if (!alertId.isNullOrEmpty()) {
+                val userId = FirebaseAuth.getInstance().currentUser?.uid
+                if (userId != null) {
+                    scheduleAlertFetch(alertId, userId)
+                } else {
+                    Log.w(TAG, "User not logged in, cannot fetch alert details.")
+                }
+            } else {
+                Log.w(TAG, "Message received without alertId.")
             }
         }
     }
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        sendRegistrationToServer(token)
+        Log.d(TAG, "New token: $token")
+        // Use the centralized helper to update the token
+        FirebaseManager.getInstance(this).updateFCMToken(token)
     }
 
-    private fun sendRegistrationToServer(token: String) {
-        val userId = FirebaseAuth.getInstance().currentUser?.uid
-        if (userId == null) {
-            Log.w("MyFirebaseMsgService", "User not logged in, cannot save FCM token.")
-            return
-        }
-        
-        val db = FirebaseFirestore.getInstance()
-        val tokenData = hashMapOf("device_token" to token)
-        
-        db.collection("tokens").document(userId)
-            .set(tokenData)
-            .addOnSuccessListener { Log.d("MyFirebaseMsgService", "FCM Token successfully written!") }
-            .addOnFailureListener { e -> Log.w("MyFirebaseMsgService", "Error writing FCM token", e) }
-    }
-
-    private fun saveAlert(id: String, type: String, description: String, mediaUrl: String, mediaType: String, priority: String) {
-        val prefs = PreferenceManager(this)
-        GlobalScope.launch {
-            if (prefs.getAlertPreference(PreferenceManager.SAVE_ALERTS_LOCALLY)) {
-                val database = AppDatabase.getDatabase(this@MyFirebaseMessagingService)
-                val alertRepository = AlertRepository(database.alertDao(), prefs)
-                val alert = Alert(
-                    id = id,
-                    type = AlertType.valueOf(type),
-                    description = description,
-                    timestamp = Timestamp.now(),
-                    mediaUrl = mediaUrl,
-                    mediaType = mediaType,
-                    priority = AlertPriority.valueOf(priority.uppercase(Locale.getDefault()))
-                )
-                alertRepository.insert(alert)
-            }
-        }
-    }
-
-    private fun shouldShowNotification(type: String): Boolean {
-        val prefs = PreferenceManager(this)
-        return runBlocking {
-            when (type.uppercase()) {
-                "INTRUDER" -> prefs.getAlertPreference(PreferenceManager.ALERT_INTRUDER)
-                "FACE_RECOGNITION" -> prefs.getAlertPreference(PreferenceManager.ALERT_FACE_RECOGNITION)
-                "MASK_DETECTION" -> prefs.getAlertPreference(PreferenceManager.ALERT_MASK_DETECTION)
-                "UNKNOWN_FACE" -> prefs.getAlertPreference(PreferenceManager.ALERT_UNKNOWN_FACE)
-                "WEAPON" -> prefs.getAlertPreference(PreferenceManager.ALERT_WEAPON)
-                "SCREAM" -> prefs.getAlertPreference(PreferenceManager.ALERT_SCREAM)
-                else -> true 
-            }
-        }
-    }
-
-    private fun sendNotification(title: String, messageBody: String, alertType: String, id: String, description: String, mediaUrl: String, mediaType: String, priorityString: String) {
-        // Deep link intent to MainActivity
-        val intent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            putExtra("alertId", id)
-            putExtra("alertType", alertType)
-            putExtra("alertDesc", description)
-            putExtra("mediaUrl", mediaUrl)
-            putExtra("mediaType", mediaType)
-        }
-        
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+    private fun scheduleAlertFetch(alertId: String, userId: String) {
+        val data = workDataOf(
+            "alertId" to alertId,
+            "userId" to userId
         )
 
-        var soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-        val prefs = PreferenceManager(this)
-        
-        val priority = try {
-            AlertPriority.valueOf(priorityString.uppercase())
-        } catch (_: Exception) {
-            AlertPriority.MEDIUM
-        }
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
 
-        runBlocking {
-            prefs.getNotificationSound(priority.name)?.let {
-                if (it.isNotEmpty()) {
-                    try {
-                        soundUri = it.toUri()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }
-        }
-
-        val channelId = "guardian_eye_${priority.name.lowercase(Locale.getDefault())}"
-        val channelName = "${priority.name.lowercase(Locale.getDefault()).replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }} Priority Alerts"
-        
-        val importance = when (priority) {
-            AlertPriority.CRITICAL, AlertPriority.HIGH -> NotificationManager.IMPORTANCE_HIGH
-            else -> NotificationManager.IMPORTANCE_DEFAULT
-        }
-
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(messageBody)
-            .setAutoCancel(true)
-            .setSound(soundUri)
-            .setContentIntent(pendingIntent)
-            .setPriority(if (importance == NotificationManager.IMPORTANCE_HIGH) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
-
-        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                channelName,
-                importance
+        val fetchRequest = OneTimeWorkRequestBuilder<FetchAlertWorker>()
+            .setInputData(data)
+            .setConstraints(constraints)
+            .setBackoffCriteria(
+                BackoffPolicy.EXPONENTIAL,
+                WorkRequest.MIN_BACKOFF_MILLIS,
+                TimeUnit.MILLISECONDS
             )
-            
-            val audioAttributes = AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                .build()
-                
-            channel.setSound(soundUri, audioAttributes)
-            notificationManager.createNotificationChannel(channel)
-        }
+            .build()
 
-        notificationManager.notify(System.currentTimeMillis().toInt(), notificationBuilder.build())
+        WorkManager.getInstance(this).enqueueUniqueWork(
+            "fetch_alert_$alertId",
+            ExistingWorkPolicy.REPLACE, 
+            fetchRequest
+        )
     }
 }

@@ -1,6 +1,7 @@
 package com.example.guardianeye
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -15,14 +16,17 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
+import com.example.guardianeye.data.repository.FirebaseManager
 import com.example.guardianeye.ui.GuardianEyeApp
 import com.example.guardianeye.ui.theme.GuardianEyeTheme
 import com.example.guardianeye.utils.PreferenceManager
+import com.example.guardianeye.utils.getEmergencyContactOrShowToast
 import com.example.guardianeye.utils.makeCall
 import com.example.guardianeye.utils.sendSms
-import com.google.firebase.auth.FirebaseAuth
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
     private lateinit var preferenceManager: PreferenceManager
@@ -30,13 +34,23 @@ class MainActivity : FragmentActivity() {
     // State for Compose Overlay Logic handled in App
     private var panicTimerSeconds = 5
     private var panicMessage = ""
+    
+    // State for tracking if we launched with a specific alert
+    private var pendingAlertId: String? = null
+
+    private val multiplePermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.entries.all { it.value }
+        if (!allGranted) {
+             Toast.makeText(this, "Some permissions were denied. Certain features may not work.", Toast.LENGTH_LONG).show()
+        }
+    }
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
-        if (isGranted) {
-             Toast.makeText(this, "Permission granted", Toast.LENGTH_SHORT).show()
-        } else {
+        if (!isGranted) {
              Toast.makeText(this, "Permission denied.", Toast.LENGTH_LONG).show()
         }
     }
@@ -45,6 +59,9 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         preferenceManager = PreferenceManager(this)
+
+        // Check pending intent for notification data
+        handleIntent(intent)
 
         setContent {
             GuardianEyeTheme {
@@ -66,19 +83,52 @@ class MainActivity : FragmentActivity() {
                         showPanicOverlay = false
                     },
                     onLogout = {
-                        FirebaseAuth.getInstance().signOut()
-                    }
+                        FirebaseManager.getInstance(this@MainActivity).logout()
+                    },
+                    openedAlertId = pendingAlertId
                 )
             }
         }
         
-        askNotificationPermission()
+        checkAndRequestPermissions()
+    }
+    
+    private fun checkAndRequestPermissions() {
+        val permissionsNeeded = mutableListOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO
+        )
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionsNeeded.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        val ungranted = permissionsNeeded.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (ungranted.isNotEmpty()) {
+            multiplePermissionsLauncher.launch(ungranted.toTypedArray())
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+    
+    private fun handleIntent(intent: Intent?) {
+        intent?.let {
+            if (it.hasExtra("alertId")) {
+                pendingAlertId = it.getStringExtra("alertId")
+            }
+        }
     }
 
     private fun executePanicAction() {
         lifecycleScope.launch {
-            val contact = preferenceManager.getEmergencyContact()
-            if (!contact.isNullOrEmpty()) {
+            val contact = getEmergencyContactOrShowToast(this@MainActivity, preferenceManager)
+            if (contact != null) {
                 if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
                      makeCall(this@MainActivity, contact)
                 } else {
@@ -92,18 +142,6 @@ class MainActivity : FragmentActivity() {
                          requestPermissionLauncher.launch(Manifest.permission.SEND_SMS)
                      }
                 }
-            } else {
-                Toast.makeText(this@MainActivity, "No emergency contact set!", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun askNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }

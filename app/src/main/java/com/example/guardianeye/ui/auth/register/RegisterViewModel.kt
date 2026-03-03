@@ -1,16 +1,19 @@
 package com.example.guardianeye.ui.auth.register
 
 import androidx.lifecycle.ViewModel
+import com.example.guardianeye.data.repository.FirebaseManager
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.messaging.FirebaseMessaging
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import javax.inject.Inject
 
-class RegisterViewModel : ViewModel() {
+@HiltViewModel
+class RegisterViewModel @Inject constructor(
+    private val firebaseManager: FirebaseManager
+) : ViewModel() {
     private val auth = FirebaseAuth.getInstance()
-    private val db = FirebaseFirestore.getInstance()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -36,7 +39,8 @@ class RegisterViewModel : ViewModel() {
             .addOnCompleteListener { task ->
                 _isLoading.value = false
                 if (task.isSuccessful) {
-                    updateFCMToken()
+                    // Centralized token update
+                    firebaseManager.updateFCMToken()
                     onSuccess()
                 } else {
                     _registrationError.value = "Registration failed: ${task.exception?.message}"
@@ -46,18 +50,5 @@ class RegisterViewModel : ViewModel() {
     
     fun clearError() {
         _registrationError.value = null
-    }
-
-    private fun updateFCMToken() {
-        val userId = auth.currentUser?.uid ?: return
-        val tokenRef = db.collection("tokens").document(userId)
-
-        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
-            if (task.isSuccessful) {
-                val newToken = task.result
-                val tokenData = hashMapOf("device_token" to newToken)
-                tokenRef.set(tokenData)
-            }
-        }
     }
 }

@@ -2,10 +2,10 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.google.services)
-    id("androidx.navigation.safeargs.kotlin")
+    alias(libs.plugins.navigation.safeargs)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
-
+    alias(libs.plugins.hilt)
 }
 
 android {
@@ -58,6 +58,7 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.messaging)
+    implementation(libs.firebase.database)
 
     // Navigation
     implementation(libs.androidx.navigation.fragment.ktx)
@@ -94,9 +95,10 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation(libs.androidx.room.common.jvm)
+    implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.compose.foundation)
+    implementation(libs.generativeai)
 
     ksp(libs.androidx.room.compiler)
 
@@ -114,17 +116,23 @@ dependencies {
     implementation(libs.androidx.documentfile)
     implementation(libs.coil.compose)
 
-    // MediaPipe & GenAI
+    // MediaPipe & AI Edge Function Calling SDK
     implementation(libs.tasks.genai)
+    implementation(libs.localagents.fc)
 
     // Biometric & Security
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.security.crypto)
-    implementation("com.google.crypto.tink:tink-android:1.12.0")
+    implementation(libs.tink.android)
 
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
 
-    // FFmpeg
-        //implementation(libs.ffmpeg.kit.full)
+    // Hilt
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.androidx.hilt.navigation.compose)
+
+    // Location
+    implementation(libs.play.services.location)
 }

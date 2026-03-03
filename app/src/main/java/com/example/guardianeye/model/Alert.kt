@@ -14,18 +14,29 @@ data class Alert(
     val description: String = "",
     val isActionTaken: Boolean = false,
     val actionTakenType: String? = null,
+    val resolutionSource: ResolutionSource? = null,
     val mediaUrl: String? = null,
-    val mediaType: String? = null
+    val mediaType: String? = null,
+    
+    // Family Support
+    val familyId: String? = null,
+    val detectedBy: String? = null, // Device ID or Member Name
+    
+    // Support for Composite Alerts
+    val isComposite: Boolean = false,
+    val childAlertIds: List<String>? = null,
+    val compositeType: String? = null // e.g., "WEAPON_WITH_KNOWN_FACE"
 )
 
 enum class AlertType {
     UNKNOWN,
-    INTRUDER,
+    KNOWN_FACE,
     FACE_RECOGNITION,
     MASK_DETECTION,
     UNKNOWN_FACE,
     WEAPON,
-    SCREAM
+    SCREAM,
+    COMPOSITE
 }
 
 enum class AlertPriority {
@@ -33,4 +44,10 @@ enum class AlertPriority {
     MEDIUM,
     HIGH,
     CRITICAL
+}
+
+enum class ResolutionSource {
+    USER,
+    AUTO,
+    ASSISTANT
 }

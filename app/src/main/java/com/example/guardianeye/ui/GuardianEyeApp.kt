@@ -1,10 +1,10 @@
 package com.example.guardianeye.ui
 
-import android.net.Uri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -31,7 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -41,15 +41,22 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
 import com.example.guardianeye.R
+import com.example.guardianeye.model.Alert
 import com.example.guardianeye.ui.alerts.AlertDetailScreen
 import com.example.guardianeye.ui.alerts.AlertsScreen
+import com.example.guardianeye.ui.alerts.AlertsViewModel
 import com.example.guardianeye.ui.auth.authcheck.AuthCheckScreen
 import com.example.guardianeye.ui.auth.login.LoginScreen
 import com.example.guardianeye.ui.auth.register.RegisterScreen
 import com.example.guardianeye.ui.chat.ChatScreen
+import com.example.guardianeye.ui.chat.ChatViewModel
 import com.example.guardianeye.ui.components.PanicOverlay
+import com.example.guardianeye.ui.family.FamilyScreen
+import com.example.guardianeye.ui.family.FamilyViewModel
 import com.example.guardianeye.ui.footage.FootageScreen
+import com.example.guardianeye.ui.footage.FootageViewModel
 import com.example.guardianeye.ui.home.HomeScreen
 import com.example.guardianeye.ui.home.HomeViewModel
 import com.example.guardianeye.ui.navigation.GuardianEyeDestinations
@@ -63,6 +70,7 @@ import com.example.guardianeye.ui.settings.PanicSettingsScreen
 import com.example.guardianeye.ui.settings.SecuritySettingsScreen
 import com.example.guardianeye.ui.settings.SettingsScreen
 import com.example.guardianeye.ui.settings.SettingsViewModel
+import com.example.guardianeye.utils.AlertSerializer
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,21 +81,21 @@ fun GuardianEyeApp(
     onPanicCancel: () -> Unit,
     panicTimerSeconds: Int,
     onPanicTimerFinished: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    openedAlertId: String? = null
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // Check if the current screen should show the top bar
     val isAuthScreen = currentRoute == GuardianEyeDestinations.AUTH_CHECK_ROUTE ||
             currentRoute == GuardianEyeDestinations.LOGIN_ROUTE ||
             currentRoute == GuardianEyeDestinations.REGISTER_ROUTE
 
-    // Determine if current screen is top-level (drawer)
     val isTopLevel = currentRoute?.substringBefore("?") in listOf(
         GuardianEyeDestinations.HOME_ROUTE,
         GuardianEyeDestinations.ALERTS_ROUTE,
+        GuardianEyeDestinations.FAMILY_ROUTE,
         GuardianEyeDestinations.CHAT_ROUTE,
         GuardianEyeDestinations.SETTINGS_ROUTE
     )
@@ -177,7 +185,11 @@ fun GuardianEyeApp(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                GuardianEyeNavHost(navController = navController, onLogout = onLogout)
+                GuardianEyeNavHost(
+                    navController = navController, 
+                    onLogout = onLogout,
+                    openedAlertId = openedAlertId
+                )
             }
         }
     }
@@ -194,7 +206,6 @@ fun GuardianEyeApp(
 private fun getTopBarTitle(route: String?, navBackStackEntry: NavBackStackEntry?): String {
     if (route == null) return stringResource(R.string.app_name)
 
-    // Handle parameterized routes first
     if (route.startsWith(GuardianEyeDestinations.CHAT_ROUTE)) {
         val alertType = navBackStackEntry?.arguments?.getString("alertType")
         return if (!alertType.isNullOrEmpty()) "$alertType Chat" else "Chat"
@@ -207,6 +218,7 @@ private fun getTopBarTitle(route: String?, navBackStackEntry: NavBackStackEntry?
     return when (route) {
         GuardianEyeDestinations.HOME_ROUTE -> "Home"
         GuardianEyeDestinations.ALERTS_ROUTE -> "Alerts"
+        GuardianEyeDestinations.FAMILY_ROUTE -> "Family"
         GuardianEyeDestinations.FOOTAGE_ROUTE -> "Footage"
         GuardianEyeDestinations.SETTINGS_ROUTE -> "Settings"
         GuardianEyeDestinations.SETTINGS_ACCOUNT_ROUTE -> "Account"
@@ -220,13 +232,14 @@ private fun getTopBarTitle(route: String?, navBackStackEntry: NavBackStackEntry?
     }
 }
 
-// Replaced SettingsSubScreen with a simpler wrapper since Scaffold is now at root
 @Composable
 fun SettingsSubScreenWrapper(
     content: @Composable () -> Unit
 ) {
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding(),
         color = MaterialTheme.colorScheme.background
     ) {
         content()
@@ -236,18 +249,29 @@ fun SettingsSubScreenWrapper(
 @Composable
 fun GuardianEyeNavHost(
     navController: NavHostController,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    openedAlertId: String? = null
 ) {
+    
     NavHost(
         navController = navController,
         startDestination = GuardianEyeDestinations.AUTH_CHECK_ROUTE
     ) {
-        // Auth
         composable(GuardianEyeDestinations.AUTH_CHECK_ROUTE) {
             AuthCheckScreen(
                 onAuthSuccess = {
-                    navController.navigate(GuardianEyeDestinations.HOME_ROUTE) {
-                        popUpTo(GuardianEyeDestinations.AUTH_CHECK_ROUTE) { inclusive = true }
+                    if (openedAlertId != null) {
+                        navController.navigate(GuardianEyeDestinations.HOME_ROUTE) {
+                            popUpTo(GuardianEyeDestinations.AUTH_CHECK_ROUTE) { inclusive = true }
+                        }
+                        val partialAlert = Alert(id = openedAlertId)
+                        val alertJson = AlertSerializer.toJson(partialAlert)
+                        val route = "${GuardianEyeDestinations.CHAT_ROUTE}?alertJson=$alertJson"
+                        navController.navigate(route)
+                    } else {
+                        navController.navigate(GuardianEyeDestinations.HOME_ROUTE) {
+                            popUpTo(GuardianEyeDestinations.AUTH_CHECK_ROUTE) { inclusive = true }
+                        }
                     }
                 },
                 onNotLoggedIn = {
@@ -286,145 +310,140 @@ fun GuardianEyeNavHost(
             )
         }
 
-        // Home
         composable(GuardianEyeDestinations.HOME_ROUTE) {
-            val viewModel: HomeViewModel = viewModel()
+            val viewModel: HomeViewModel = hiltViewModel()
             HomeScreen(viewModel = viewModel, onNavigateToFootage = {
                 navController.navigate(GuardianEyeDestinations.FOOTAGE_ROUTE)
             })
         }
 
-        // Alerts
         composable(GuardianEyeDestinations.ALERTS_ROUTE) {
+            val viewModel: AlertsViewModel = hiltViewModel()
             AlertsScreen(
+                viewModel = viewModel,
                 onNavigateToChat = { alert ->
-                    val route = "${GuardianEyeDestinations.CHAT_ROUTE}?alertId=${alert.id}&alertType=${alert.type}&alertDesc=${Uri.encode(alert.description)}&mediaUrl=${Uri.encode(alert.mediaUrl ?: "")}&mediaType=${alert.mediaType ?: ""}"
+                    val alertJson = AlertSerializer.toJson(alert)
+                    val route = "${GuardianEyeDestinations.CHAT_ROUTE}?alertJson=$alertJson"
                     navController.navigate(route)
                 },
                 onNavigateToDetail = { alert ->
-                    val route = "${GuardianEyeDestinations.ALERT_DETAIL_ROUTE}/${alert.id}/${alert.type}/${Uri.encode(alert.description)}/${Uri.encode(alert.mediaUrl ?: "")}/${alert.mediaType ?: "NONE"}"
+                    val alertJson = AlertSerializer.toJson(alert)
+                    val route = "${GuardianEyeDestinations.ALERT_DETAIL_ROUTE}/$alertJson"
                     navController.navigate(route)
                 }
             )
         }
 
-        // Footage
-        composable(GuardianEyeDestinations.FOOTAGE_ROUTE) {
-            FootageScreen()
+        composable(GuardianEyeDestinations.FAMILY_ROUTE) {
+            val viewModel: FamilyViewModel = hiltViewModel()
+            FamilyScreen(viewModel = viewModel)
         }
 
-        // Chat
+        composable(GuardianEyeDestinations.FOOTAGE_ROUTE) {
+            val viewModel: FootageViewModel = hiltViewModel()
+            FootageScreen(viewModel = viewModel)
+        }
+
         composable(
-            route = "${GuardianEyeDestinations.CHAT_ROUTE}?alertId={alertId}&alertType={alertType}&alertDesc={alertDesc}&mediaUrl={mediaUrl}&mediaType={mediaType}",
+            route = "${GuardianEyeDestinations.CHAT_ROUTE}?alertJson={alertJson}",
             arguments = listOf(
-                navArgument("alertId") { nullable = true; defaultValue = null },
-                navArgument("alertType") { nullable = true; defaultValue = null },
-                navArgument("alertDesc") { nullable = true; defaultValue = null },
-                navArgument("mediaUrl") { nullable = true; defaultValue = null },
-                navArgument("mediaType") { nullable = true; defaultValue = null }
+                navArgument("alertJson") { nullable = true; defaultValue = null }
+            ),
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "guardianeye://chat/{alertJson}" }
             )
         ) { backStackEntry ->
+            val alertJson = backStackEntry.arguments?.getString("alertJson")
+            val alert = AlertSerializer.fromJson(alertJson)
+            val viewModel: ChatViewModel = hiltViewModel()
+            
             ChatScreen(
-                alertId = backStackEntry.arguments?.getString("alertId"),
-                alertType = backStackEntry.arguments?.getString("alertType"),
-                alertDesc = backStackEntry.arguments?.getString("alertDesc"),
-                mediaUrl = backStackEntry.arguments?.getString("mediaUrl"),
-                mediaType = backStackEntry.arguments?.getString("mediaType")
-                // onBack is handled by root scaffold
+                alert = alert,
+                viewModel = viewModel
             )
         }
 
-        // Settings Graph
         navigation(
             startDestination = GuardianEyeDestinations.SETTINGS_ROUTE,
             route = GuardianEyeDestinations.SETTINGS_GRAPH_ROUTE
         ) {
             composable(GuardianEyeDestinations.SETTINGS_ROUTE) {
+                val viewModel: SettingsViewModel = hiltViewModel()
                 SettingsScreen(
+                    viewModel = viewModel,
                     onNavigateToAccount = { navController.navigate(GuardianEyeDestinations.SETTINGS_ACCOUNT_ROUTE) },
                     onNavigateToNotifications = { navController.navigate(GuardianEyeDestinations.SETTINGS_NOTIFICATIONS_ROUTE) },
                     onNavigateToData = { navController.navigate(GuardianEyeDestinations.SETTINGS_DATA_ROUTE) },
                     onNavigateToSecurity = { navController.navigate(GuardianEyeDestinations.SETTINGS_SECURITY_ROUTE) },
                     onNavigateToPanic = { navController.navigate(GuardianEyeDestinations.SETTINGS_PANIC_ROUTE) },
                     onNavigateToGeneral = { navController.navigate(GuardianEyeDestinations.SETTINGS_GENERAL_ROUTE) },
-                    onNavigateToAi = { navController.navigate(GuardianEyeDestinations.SETTINGS_AI_ROUTE) }
+                    onNavigateToAi = { navController.navigate(GuardianEyeDestinations.SETTINGS_AI_ROUTE) },
+                    onNavigateToFamily = { navController.navigate(GuardianEyeDestinations.FAMILY_ROUTE) }
                 )
             }
 
             composable(GuardianEyeDestinations.SETTINGS_ACCOUNT_ROUTE) {
                 SettingsSubScreenWrapper {
-                    val viewModel: SettingsViewModel = viewModel()
+                    val viewModel: SettingsViewModel = hiltViewModel()
                     AccountSettingsScreen(viewModel, onLogout)
                 }
             }
             
             composable(GuardianEyeDestinations.SETTINGS_NOTIFICATIONS_ROUTE) {
                 SettingsSubScreenWrapper {
-                    val viewModel: SettingsViewModel = viewModel()
+                    val viewModel: SettingsViewModel = hiltViewModel()
                     NotificationSettingsScreen(viewModel)
                 }
             }
             
             composable(GuardianEyeDestinations.SETTINGS_DATA_ROUTE) {
                 SettingsSubScreenWrapper {
-                    val viewModel: SettingsViewModel = viewModel()
+                    val viewModel: SettingsViewModel = hiltViewModel()
                     DataSettingsScreen(viewModel)
                 }
             }
             
             composable(GuardianEyeDestinations.SETTINGS_SECURITY_ROUTE) {
                 SettingsSubScreenWrapper {
-                    val viewModel: SettingsViewModel = viewModel()
+                    val viewModel: SettingsViewModel = hiltViewModel()
                     SecuritySettingsScreen(viewModel)
                 }
             }
             
             composable(GuardianEyeDestinations.SETTINGS_PANIC_ROUTE) {
                 SettingsSubScreenWrapper {
-                    val viewModel: SettingsViewModel = viewModel()
+                    val viewModel: SettingsViewModel = hiltViewModel()
                     PanicSettingsScreen(viewModel)
                 }
             }
             
             composable(GuardianEyeDestinations.SETTINGS_GENERAL_ROUTE) {
                 SettingsSubScreenWrapper {
-                    val viewModel: SettingsViewModel = viewModel()
+                    val viewModel: SettingsViewModel = hiltViewModel()
                     GeneralSettingsScreen(viewModel)
                 }
             }
             
             composable(GuardianEyeDestinations.SETTINGS_AI_ROUTE) {
                 SettingsSubScreenWrapper {
-                    val viewModel: SettingsViewModel = viewModel()
+                    val viewModel: SettingsViewModel = hiltViewModel()
                     AiSettingsScreen(viewModel)
                 }
             }
 
-            // Alert Detail
             composable(
-                route = "${GuardianEyeDestinations.ALERT_DETAIL_ROUTE}/{alertId}/{alertType}/{alertDesc}/{mediaUrl}/{mediaType}",
+                route = "${GuardianEyeDestinations.ALERT_DETAIL_ROUTE}/{alertJson}",
                 arguments = listOf(
-                    navArgument("alertId") { type = NavType.StringType },
-                    navArgument("alertType") { type = NavType.StringType },
-                    navArgument("alertDesc") { type = NavType.StringType },
-                    navArgument("mediaUrl") { type = NavType.StringType },
-                    navArgument("mediaType") { type = NavType.StringType }
+                    navArgument("alertJson") { type = NavType.StringType }
                 )
             ) { backStackEntry ->
-                val alertId = backStackEntry.arguments?.getString("alertId")
-                val alertType = backStackEntry.arguments?.getString("alertType")
-                val alertDesc = backStackEntry.arguments?.getString("alertDesc")
-                val mediaUrl = backStackEntry.arguments?.getString("mediaUrl")
-                val mediaType = backStackEntry.arguments?.getString("mediaType")
+                val alertJson = backStackEntry.arguments?.getString("alertJson")
+                val alert = AlertSerializer.fromJson(alertJson) ?: Alert()
 
                 AlertDetailScreen(
-                    alertId = alertId,
-                    alertType = alertType,
-                    alertDesc = alertDesc,
-                    mediaUrl = mediaUrl,
-                    mediaType = mediaType,
+                    alert = alert,
                     onNavigateToChat = {
-                         val route = "${GuardianEyeDestinations.CHAT_ROUTE}?alertId=${alertId ?: ""}&alertType=${alertType ?: ""}&alertDesc=${Uri.encode(alertDesc ?: "")}&mediaUrl=${Uri.encode(mediaUrl ?: "")}&mediaType=${mediaType ?: ""}"
+                         val route = "${GuardianEyeDestinations.CHAT_ROUTE}?alertJson=${AlertSerializer.toJson(alert)}"
                          navController.navigate(route)
                     }
                 )

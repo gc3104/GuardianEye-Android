@@ -12,12 +12,15 @@ interface ChatDao {
     @Query("SELECT * FROM chatmessage ORDER BY timestamp ASC")
     fun getAllMessages(): Flow<List<ChatMessage>>
 
+    @Query("SELECT * FROM chatmessage WHERE alertId = :alertId ORDER BY timestamp ASC")
+    fun getMessagesForAlert(alertId: String): Flow<List<ChatMessage>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: ChatMessage)
 
     @Query("DELETE FROM chatmessage")
-    suspend fun deleteAllMessages()
+    suspend fun deleteAllMessages(): Int
 
     @Query("DELETE FROM chatmessage WHERE timestamp < :timestamp")
-    suspend fun deleteMessagesOlderThan(timestamp: Long)
+    suspend fun deleteMessagesOlderThan(timestamp: Long): Int
 }

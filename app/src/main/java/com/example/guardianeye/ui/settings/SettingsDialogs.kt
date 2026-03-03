@@ -28,8 +28,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +45,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.guardianeye.ui.auth.authcheck.MpinStorage
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseUser
+import kotlinx.coroutines.launch
 
 @Composable
 fun ChangePasswordDialog(onDismiss: () -> Unit, currentUser: FirebaseUser) {
@@ -124,24 +127,25 @@ fun MpinManagementDialog(
     mpinStorage: MpinStorage
 ) {
     val context = LocalContext.current
-    var step by remember { mutableStateOf(if (mode == MpinMode.CHANGE || mode == MpinMode.REMOVE) 0 else 1) } 
-    // Step 0: Verify Old, Step 1: Enter New, Step 2: Confirm New
+    val scope = rememberCoroutineScope()
+    var step by remember { mutableIntStateOf(if (mode == MpinMode.CHANGE || mode == MpinMode.REMOVE) 0 else 1) }
     
     var title by remember { mutableStateOf("") }
     var subtitle by remember { mutableStateOf("") }
     var mpinInput by remember { mutableStateOf("") }
     var tempNewMpin by remember { mutableStateOf("") }
 
-    // Determine Title based on Mode & Step
     when (mode) {
         MpinMode.SET -> {
             if (step == 1) { title = "Set MPIN"; subtitle = "Enter a 4-digit PIN" }
             else { title = "Confirm MPIN"; subtitle = "Re-enter to confirm" }
         }
         MpinMode.CHANGE -> {
-            if (step == 0) { title = "Verify Old MPIN"; subtitle = "Enter current PIN" }
-            else if (step == 1) { title = "New MPIN"; subtitle = "Enter new 4-digit PIN" }
-            else { title = "Confirm New MPIN"; subtitle = "Re-enter to confirm" }
+            when (step) {
+                0 -> { title = "Verify Old MPIN"; subtitle = "Enter current PIN" }
+                1 -> { title = "New MPIN"; subtitle = "Enter new 4-digit PIN" }
+                else -> { title = "Confirm New MPIN"; subtitle = "Re-enter to confirm" }
+            }
         }
         MpinMode.REMOVE -> {
             title = "Remove MPIN"
@@ -163,114 +167,95 @@ fun MpinManagementDialog(
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Header
                 Box(modifier = Modifier.fillMaxWidth()) {
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.align(Alignment.TopEnd)
-                    ) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd)) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
                     }
                 }
                 
                 Spacer(modifier = Modifier.height(32.dp))
-                
                 Text(text = title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
                 Spacer(modifier = Modifier.height(32.dp))
 
-                // Dots
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.padding(vertical = 24.dp)
-                ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(vertical = 24.dp)) {
                     repeat(4) { index ->
-                        Box(
-                            modifier = Modifier
-                                .size(16.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (index < mpinInput.length) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.surfaceVariant
-                                )
-                        )
+                        Box(modifier = Modifier.size(16.dp).clip(CircleShape).background(
+                            if (index < mpinInput.length) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        ))
                     }
                 }
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Keypad
                 Keypad(
                     onDigitClick = { digit ->
                         if (mpinInput.length < 4) {
                             mpinInput += digit
                             if (mpinInput.length == 4) {
-                                // Logic when 4 digits entered
-                                when (mode) {
-                                    MpinMode.SET -> {
-                                        if (step == 1) {
-                                            tempNewMpin = mpinInput
-                                            mpinInput = ""
-                                            step = 2
-                                        } else {
-                                            if (mpinInput == tempNewMpin) {
-                                                mpinStorage.saveMpin(mpinInput)
-                                                Toast.makeText(context, "MPIN Set Successfully", Toast.LENGTH_SHORT).show()
-                                                onSuccess()
-                                            } else {
-                                                Toast.makeText(context, "PINs do not match", Toast.LENGTH_SHORT).show()
+                                scope.launch {
+                                    when (mode) {
+                                        MpinMode.SET -> {
+                                            if (step == 1) {
+                                                tempNewMpin = mpinInput
                                                 mpinInput = ""
-                                                tempNewMpin = ""
-                                                step = 1
+                                                step = 2
+                                            } else {
+                                                if (mpinInput == tempNewMpin) {
+                                                    mpinStorage.saveMpin(mpinInput)
+                                                    Toast.makeText(context, "MPIN Set Successfully", Toast.LENGTH_SHORT).show()
+                                                    onSuccess()
+                                                } else {
+                                                    Toast.makeText(context, "PINs do not match", Toast.LENGTH_SHORT).show()
+                                                    mpinInput = ""
+                                                    tempNewMpin = ""
+                                                    step = 1
+                                                }
                                             }
                                         }
-                                    }
-                                    MpinMode.CHANGE -> {
-                                        if (step == 0) {
+                                        MpinMode.CHANGE -> {
+                                            if (step == 0) {
+                                                if (mpinStorage.verifyMpin(mpinInput)) {
+                                                    mpinInput = ""
+                                                    step = 1
+                                                } else {
+                                                    Toast.makeText(context, "Incorrect Old MPIN", Toast.LENGTH_SHORT).show()
+                                                    mpinInput = ""
+                                                }
+                                            } else if (step == 1) {
+                                                tempNewMpin = mpinInput
+                                                mpinInput = ""
+                                                step = 2
+                                            } else {
+                                                if (mpinInput == tempNewMpin) {
+                                                    mpinStorage.saveMpin(mpinInput)
+                                                    Toast.makeText(context, "MPIN Changed Successfully", Toast.LENGTH_SHORT).show()
+                                                    onSuccess()
+                                                } else {
+                                                    Toast.makeText(context, "PINs do not match", Toast.LENGTH_SHORT).show()
+                                                    mpinInput = ""
+                                                    tempNewMpin = ""
+                                                    step = 1
+                                                }
+                                            }
+                                        }
+                                        MpinMode.REMOVE -> {
                                             if (mpinStorage.verifyMpin(mpinInput)) {
-                                                mpinInput = ""
-                                                step = 1
-                                            } else {
-                                                Toast.makeText(context, "Incorrect Old MPIN", Toast.LENGTH_SHORT).show()
-                                                mpinInput = ""
-                                            }
-                                        } else if (step == 1) {
-                                            tempNewMpin = mpinInput
-                                            mpinInput = ""
-                                            step = 2
-                                        } else {
-                                            if (mpinInput == tempNewMpin) {
-                                                mpinStorage.saveMpin(mpinInput)
-                                                Toast.makeText(context, "MPIN Changed Successfully", Toast.LENGTH_SHORT).show()
+                                                mpinStorage.deleteMpin()
+                                                Toast.makeText(context, "MPIN Removed", Toast.LENGTH_SHORT).show()
                                                 onSuccess()
                                             } else {
-                                                Toast.makeText(context, "PINs do not match", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Incorrect MPIN", Toast.LENGTH_SHORT).show()
                                                 mpinInput = ""
-                                                tempNewMpin = ""
-                                                step = 1
                                             }
-                                        }
-                                    }
-                                    MpinMode.REMOVE -> {
-                                        if (mpinStorage.verifyMpin(mpinInput)) {
-                                            mpinStorage.deleteMpin()
-                                            Toast.makeText(context, "MPIN Removed", Toast.LENGTH_SHORT).show()
-                                            onSuccess()
-                                        } else {
-                                            Toast.makeText(context, "Incorrect MPIN", Toast.LENGTH_SHORT).show()
-                                            mpinInput = ""
                                         }
                                     }
                                 }
                             }
                         }
                     },
-                    onBackspaceClick = {
-                        if (mpinInput.isNotEmpty()) {
-                            mpinInput = mpinInput.dropLast(1)
-                        }
-                    }
+                    onBackspaceClick = { if (mpinInput.isNotEmpty()) mpinInput = mpinInput.dropLast(1) }
                 )
                 Spacer(modifier = Modifier.height(24.dp))
             }

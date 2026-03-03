@@ -8,6 +8,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.guardianeye.utils.PreferenceManager
 import com.example.guardianeye.webrtc.WebRtcClient
+import com.google.firebase.auth.FirebaseAuth
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,10 +20,15 @@ import kotlinx.coroutines.withContext
 import org.webrtc.AudioTrack
 import org.webrtc.EglBase
 import org.webrtc.VideoTrack
+import javax.inject.Inject
 
-class HomeViewModel(application: Application) : AndroidViewModel(application) {
+@HiltViewModel
+class HomeViewModel @Inject constructor(
+    application: Application,
+    private val preferenceManager: PreferenceManager
+) : AndroidViewModel(application) {
 
-    private val preferenceManager = PreferenceManager(application)
+    private val auth = FirebaseAuth.getInstance()
     private val _webRtcClient = MutableStateFlow<WebRtcClient?>(null)
 
     private val _viewState = MutableStateFlow(HomeViewState())
@@ -49,17 +56,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     val uri = savedUriString.toUri()
                     val context = getApplication<Application>()
                     val persistedUriPermissions = context.contentResolver.persistedUriPermissions
-                    val hasPermission = persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+                    val hasPermission =
+                        persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
 
                     if (hasPermission) {
                         val loadedFootage = withContext(Dispatchers.IO) {
                             val list = mutableListOf<Uri>()
                             val docFile = DocumentFile.fromTreeUri(context, uri)
-                            docFile?.listFiles()?.sortedByDescending { it.lastModified() }?.take(5)?.forEach { file ->
-                                if (file.isFile && (file.type?.startsWith("video/") == true || file.name?.endsWith(".mp4") == true)) {
-                                    list.add(file.uri)
+                            docFile?.listFiles()?.sortedByDescending { it.lastModified() }?.take(5)
+                                ?.forEach { file ->
+                                    if (file.isFile && (file.type?.startsWith("video/") == true || file.name?.endsWith(
+                                            ".mp4"
+                                        ) == true)
+                                    ) {
+                                        list.add(file.uri)
+                                    }
                                 }
-                            }
                             list
                         }
                         _viewState.update { it.copy(recentFootage = loadedFootage) }
@@ -72,9 +84,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startStream() {
-        _viewState.value.streamUrl?.let { url ->
+        val userId = auth.currentUser?.uid ?: return
+        _viewState.value.streamUrl?.let { baseUrl ->
+            // Normalize the URL to avoid double "/ws/" prefixes
+            val cleanedBaseUrl = baseUrl.removeSuffix("/")
+            val wsUrl = when {
+                cleanedBaseUrl.endsWith("/ws") -> "$cleanedBaseUrl/$userId"
+                cleanedBaseUrl.contains("/ws/") -> cleanedBaseUrl // Likely already correct
+                else -> "$cleanedBaseUrl/ws/$userId"
+            }
+
             if (_webRtcClient.value == null) {
-                val client = WebRtcClient(getApplication(), url,
+                val client = WebRtcClient(
+                    getApplication(), wsUrl,
                     object : WebRtcClient.Listener {
                         override fun onStatusChanged(status: WebRtcClient.ConnectionStatus) {
                             _viewState.update { it.copy(connectionStatus = status) }
@@ -89,14 +111,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         }
 
                         override fun onDisconnected() {
-                            _viewState.update { 
+                            _viewState.update {
                                 it.copy(
-                                    videoTrack = null, 
-                                    audioTrack = null, 
+                                    videoTrack = null,
+                                    audioTrack = null,
                                     eglBaseContext = null,
                                     connectionStatus = WebRtcClient.ConnectionStatus.DISCONNECTED,
-                                    isAudioTransmitting = false
-                                ) 
+                                    isAudioTransmitting = false,
+                                    isRemoteAudioEnabled = true,
+                                    remoteAudioVolume = 1f
+                                )
                             }
                             _webRtcClient.value = null
                         }
@@ -109,12 +133,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun disconnect() {
-         _webRtcClient.value?.disconnect()
+        _webRtcClient.value?.disconnect()
     }
 
     fun toggleAudio(enabled: Boolean) {
         _webRtcClient.value?.toggleAudio(enabled)
         _viewState.update { it.copy(isAudioTransmitting = enabled) }
+    }
+
+    fun toggleRemoteAudio(enabled: Boolean) {
+        _webRtcClient.value?.toggleRemoteAudio(enabled)
+        _viewState.update { it.copy(isRemoteAudioEnabled = enabled) }
+    }
+
+    fun setRemoteAudioVolume(volume: Float) {
+        _webRtcClient.value?.setRemoteAudioVolume(volume.toDouble())
+        _viewState.update { it.copy(remoteAudioVolume = volume) }
     }
 
     override fun onCleared() {
@@ -130,5 +164,7 @@ data class HomeViewState(
     val eglBaseContext: EglBase.Context? = null,
     val connectionStatus: WebRtcClient.ConnectionStatus = WebRtcClient.ConnectionStatus.DISCONNECTED,
     val isAudioTransmitting: Boolean = false,
+    val isRemoteAudioEnabled: Boolean = true,
+    val remoteAudioVolume: Float = 1f,
     val recentFootage: List<Uri> = emptyList()
 )

@@ -5,6 +5,7 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.People
 import androidx.compose.ui.graphics.vector.ImageVector
 
 object GuardianEyeDestinations {
@@ -15,6 +16,7 @@ object GuardianEyeDestinations {
     const val ALERTS_ROUTE = "alerts"
     const val FOOTAGE_ROUTE = "footage"
     const val CHAT_ROUTE = "chat"
+    const val FAMILY_ROUTE = "family"
 
     // Settings Routes
     const val SETTINGS_GRAPH_ROUTE = "settings_graph"
@@ -51,13 +53,19 @@ val TOP_LEVEL_DESTINATIONS = listOf(
         iconTextId = "Alerts"
     ),
     TopLevelDestination(
+        route = GuardianEyeDestinations.FAMILY_ROUTE,
+        selectedIcon = Icons.Filled.People,
+        unselectedIcon = Icons.Filled.People,
+        iconTextId = "Family"
+    ),
+    TopLevelDestination(
         route = GuardianEyeDestinations.CHAT_ROUTE,
         selectedIcon = Icons.AutoMirrored.Filled.Chat,
         unselectedIcon = Icons.AutoMirrored.Filled.Chat,
         iconTextId = "Chat"
     ),
     TopLevelDestination(
-        route = GuardianEyeDestinations.SETTINGS_GRAPH_ROUTE, // Point to the graph
+        route = GuardianEyeDestinations.SETTINGS_GRAPH_ROUTE,
         selectedIcon = Icons.Filled.Settings,
         unselectedIcon = Icons.Filled.Settings,
         iconTextId = "Settings"
